@@ -2,10 +2,12 @@
 
 /**
  * WALY MOTORS OS — Detalle de Contrato
- * Barra de progreso financiero (RPC resumen_contrato),
- * historial de pagos con evidencias firmadas y comprobante en
- * PDF por cada pago, y botón de finalización (RPC finalizar_contrato,
- * libera la mototaxi).
+ * Barra de progreso financiero (RPC resumen_contrato), acciones de
+ * contrato (descargar / enviar por WhatsApp vía enlace firmado de
+ * 7 días) e historial de pagos con un menú de acciones por fila
+ * (ver evidencia, comprobante de pago, y las mismas acciones de
+ * contrato). Botón de finalización (RPC finalizar_contrato, libera
+ * la mototaxi).
  */
 
 import { useState } from "react";
@@ -20,12 +22,16 @@ import {
   Flag,
   ImageIcon,
   Share2,
+  Download,
+  MessageCircle,
+  MoreVertical,
   X,
 } from "lucide-react";
-import { supabase, soles, type MetodoPago } from "@/lib/supabase";
+import { supabase, soles, type MetodoPago, type FrecuenciaPago } from "@/lib/supabase";
 import { useFinalizarContrato } from "@/features/contratos/hooks/use-contratos";
 import { generarComprobantePago, compartirComprobante, type ResultadoComprobante } from "@/lib/comprobante";
-import { cn, urlFirmada } from "@/lib/utils";
+import { generarContratoPdf } from "@/lib/contrato-pdf";
+import { cn, urlFirmada, abrirWhatsApp } from "@/lib/utils";
 
 // ── Tipos ────────────────────────────────────────────────────
 interface ResumenContrato {
@@ -33,6 +39,11 @@ interface ResumenContrato {
   tipo: "alquiler" | "venta_credito";
   estado: "activo" | "vencido" | "finalizado";
   monto_total: number;
+  cuota_inicial: number;
+  monto_cuota: number;
+  frecuencia_pago: FrecuenciaPago;
+  fecha_inicio: string;
+  fecha_fin: string | null;
   total_pagado: number;
   saldo: number;
   pct_avance: number;
@@ -40,9 +51,19 @@ interface ResumenContrato {
   ultimo_pago: string | null;
   cliente_nombre: string;
   cliente_documento: string;
+  cliente_tipo_documento: "DNI" | "RUC";
+  cliente_direccion: string | null;
   cliente_telefono: string | null;
   vehiculo_placa: string;
   vehiculo_modelo: string;
+  vehiculo_anio: number;
+  vehiculo_chasis: string;
+  vehiculo_km: number;
+  firma_base64: string | null;
+  firma_fecha: string | null;
+  documentos_garantia: string[];
+  contrato_pdf_url: string | null;
+  creado_en: string;
 }
 
 interface PagoContrato {
@@ -75,6 +96,10 @@ const MENSAJE_COMPROBANTE: Record<ResultadoComprobante, string> = {
   descargado: "Comprobante descargado — ábrelo en WhatsApp para adjuntarlo.",
   cancelado: "Envío cancelado.",
 };
+
+/** El enlace del contrato dura más que el de un recibo puntual: es un
+ *  documento que el cliente puede querer reabrir más adelante. */
+const SEGUNDOS_ENLACE_CONTRATO = 60 * 60 * 24 * 7;
 
 // ── Hooks ────────────────────────────────────────────────────
 function useResumen(contratoId: string) {
@@ -117,8 +142,10 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
   const [confirmarFin, setConfirmarFin] = useState(false);
   const [evidenciaAbierta, setEvidenciaAbierta] = useState<string | null>(null);
   const [errorFinalizar, setErrorFinalizar] = useState<string | null>(null);
-  const [comprobanteEnCurso, setComprobanteEnCurso] = useState<string | null>(null);
+  const [generandoContrato, setGenerandoContrato] = useState(false);
   const [estadoComprobante, setEstadoComprobante] = useState<{ id: string; resultado: ResultadoComprobante } | null>(null);
+  const [menuPago, setMenuPago] = useState<PagoContrato | null>(null);
+  const [avisoContrato, setAvisoContrato] = useState<string | null>(null);
 
   const r = resumen.data;
 
@@ -127,36 +154,123 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
     if (url) setEvidenciaAbierta(url);
   }
 
-  async function enviarComprobante(p: PagoContrato) {
-    if (!r) return;
-    setComprobanteEnCurso(p.id);
-    setEstadoComprobante(null);
+  /** Devuelve la ruta interna del PDF del contrato, generándolo y
+   *  subiéndolo la primera vez si todavía no existe (contratos creados
+   *  antes de esta función, o si la subida original falló). */
+  async function asegurarRutaContratoPdf(): Promise<string | null> {
+    if (!r) return null;
+    if (r.contrato_pdf_url) return r.contrato_pdf_url;
+
+    const numCuotas = r.monto_cuota > 0 ? Math.ceil((r.monto_total - r.cuota_inicial) / r.monto_cuota) : 0;
+    const pdf = generarContratoPdf({
+      contratoId: r.contrato_id,
+      tipo: r.tipo,
+      creadoEnIso: r.creado_en,
+      clienteNombre: r.cliente_nombre,
+      clienteTipoDocumento: r.cliente_tipo_documento,
+      clienteDocumento: r.cliente_documento,
+      clienteDireccion: r.cliente_direccion,
+      clienteTelefono: r.cliente_telefono,
+      vehiculoPlaca: r.vehiculo_placa,
+      vehiculoModelo: r.vehiculo_modelo,
+      vehiculoAnio: r.vehiculo_anio,
+      vehiculoChasis: r.vehiculo_chasis,
+      vehiculoKm: r.vehiculo_km,
+      montoTotal: r.monto_total,
+      cuotaInicial: r.cuota_inicial,
+      montoCuota: r.monto_cuota,
+      frecuenciaPago: r.frecuencia_pago,
+      numCuotasEstimadas: numCuotas,
+      fechaInicioIso: r.fecha_inicio,
+      fechaFinIso: r.fecha_fin,
+      firmaBase64: r.firma_base64,
+      firmaFechaIso: r.firma_fecha,
+      documentosGarantia: r.documentos_garantia,
+    });
+
+    const ruta = `${r.contrato_id}/contrato.pdf`;
+    const archivo = new File([pdf.output("blob")], "contrato.pdf", { type: "application/pdf" });
+    const { error } = await supabase.storage
+      .from("contratos")
+      .upload(ruta, archivo, { contentType: "application/pdf", upsert: true });
+    if (error) return null;
+
+    await supabase.from("contratos").update({ contrato_pdf_url: ruta }).eq("id", r.contrato_id);
+    void resumen.refetch();
+    return ruta;
+  }
+
+  async function descargarContrato() {
+    setGenerandoContrato(true);
+    setAvisoContrato(null);
     try {
-      const doc = generarComprobantePago({
-        folio: p.id.slice(0, 8).toUpperCase(),
-        fechaIso: p.fecha_pago,
-        clienteNombre: r.cliente_nombre,
-        clienteDocumento: r.cliente_documento,
-        vehiculoPlaca: r.vehiculo_placa,
-        vehiculoModelo: r.vehiculo_modelo,
-        monto: p.monto_recibido,
-        metodo: p.metodo_pago,
-        observaciones: p.observaciones,
-        saldoPendiente: r.saldo,
-        recaudador: p.perfiles?.nombre ?? null,
-      });
-      const primerNombre = r.cliente_nombre.split(" ")[0];
-      const mensaje = `Hola ${primerNombre}, aquí tu comprobante de pago de ${soles.format(p.monto_recibido)} — Waly Motors. ¡Gracias por tu preferencia!`;
-      const resultado = await compartirComprobante(
-        doc,
-        `comprobante-${r.vehiculo_placa}-${p.id.slice(0, 6)}.pdf`,
-        r.cliente_telefono,
-        mensaje,
-      );
-      setEstadoComprobante({ id: p.id, resultado });
+      const ruta = await asegurarRutaContratoPdf();
+      if (!ruta) {
+        setAvisoContrato("No se pudo generar el contrato. Intenta de nuevo.");
+        return;
+      }
+      const url = await urlFirmada("contratos", ruta, SEGUNDOS_ENLACE_CONTRATO);
+      if (url) window.open(url, "_blank", "noopener,noreferrer");
     } finally {
-      setComprobanteEnCurso(null);
+      setGenerandoContrato(false);
     }
+  }
+
+  async function enviarContratoWhatsApp() {
+    if (!r) return;
+    setGenerandoContrato(true);
+    setAvisoContrato(null);
+    try {
+      const ruta = await asegurarRutaContratoPdf();
+      if (!ruta) {
+        setAvisoContrato("No se pudo generar el contrato. Intenta de nuevo.");
+        return;
+      }
+      const url = await urlFirmada("contratos", ruta, SEGUNDOS_ENLACE_CONTRATO);
+      if (!url) {
+        setAvisoContrato("No se pudo generar el enlace del contrato.");
+        return;
+      }
+      if (!r.cliente_telefono) {
+        setAvisoContrato("El cliente no tiene teléfono registrado.");
+        return;
+      }
+      const primerNombre = r.cliente_nombre.split(" ")[0];
+      const mensaje =
+        `Hola ${primerNombre}, te compartimos el contrato de tu mototaxi placa ${r.vehiculo_placa} con Waly Motors. ` +
+        `Puedes revisarlo aquí (enlace válido por 7 días): ${url}`;
+      abrirWhatsApp(r.cliente_telefono, mensaje);
+    } finally {
+      setGenerandoContrato(false);
+    }
+  }
+
+  async function enviarComprobantePago(p: PagoContrato) {
+    if (!r) return;
+    setEstadoComprobante(null);
+    const doc = generarComprobantePago({
+      folio: p.id.slice(0, 8).toUpperCase(),
+      fechaIso: p.fecha_pago,
+      clienteNombre: r.cliente_nombre,
+      clienteDocumento: r.cliente_documento,
+      vehiculoPlaca: r.vehiculo_placa,
+      vehiculoModelo: r.vehiculo_modelo,
+      monto: p.monto_recibido,
+      metodo: p.metodo_pago,
+      observaciones: p.observaciones,
+      saldoPendiente: r.saldo,
+      recaudador: p.perfiles?.nombre ?? null,
+    });
+    const primerNombre = r.cliente_nombre.split(" ")[0];
+    const mensaje = `Hola ${primerNombre}, aquí tu comprobante de pago de ${soles.format(p.monto_recibido)} — Waly Motors. ¡Gracias por tu preferencia!`;
+    const resultado = await compartirComprobante(
+      doc,
+      `comprobante-${r.vehiculo_placa}-${p.id.slice(0, 6)}.pdf`,
+      r.cliente_telefono,
+      mensaje,
+    );
+    setEstadoComprobante({ id: p.id, resultado });
+    setMenuPago(null);
   }
 
   return (
@@ -180,6 +294,31 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
           </span>
         )}
       </header>
+
+      {/* ── Acciones del contrato ── */}
+      {r && (
+        <section aria-label="Acciones del contrato" className="space-y-2">
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => void descargarContrato()}
+              disabled={generandoContrato}
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-borde bg-tarjeta py-3 text-sm font-bold text-grafito active:scale-[0.98] disabled:opacity-50"
+            >
+              <Download className="h-4 w-4" /> Descargar
+            </button>
+            <button
+              type="button"
+              onClick={() => void enviarContratoWhatsApp()}
+              disabled={generandoContrato}
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-cobre bg-cobre/10 py-3 text-sm font-bold text-cobre active:scale-[0.98] disabled:opacity-50"
+            >
+              <MessageCircle className="h-4 w-4" /> {generandoContrato ? "Generando…" : "Enviar por WhatsApp"}
+            </button>
+          </div>
+          {avisoContrato && <p className="text-xs text-grafito/50">{avisoContrato}</p>}
+        </section>
+      )}
 
       {/* ── Progreso financiero ── */}
       {resumen.isLoading ? (
@@ -277,29 +416,14 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
                   {p.estado === "parcial" && " · parcial"}
                 </p>
               </div>
-              <div className="flex shrink-0 items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => void enviarComprobante(p)}
-                  disabled={comprobanteEnCurso === p.id || !r}
-                  aria-label="Enviar comprobante por WhatsApp"
-                  title="Enviar comprobante"
-                  className="grid h-10 w-10 place-items-center rounded-xl bg-cobre/10 text-cobre disabled:opacity-40"
-                >
-                  <Share2 className="h-4 w-4" />
-                </button>
-                {p.evidencia_url && (
-                  <button
-                    type="button"
-                    onClick={() => void verEvidencia(p.evidencia_url as string)}
-                    aria-label="Ver comprobante"
-                    title="Ver evidencia"
-                    className="grid h-10 w-10 place-items-center rounded-xl bg-fondo text-grafito/50"
-                  >
-                    <ImageIcon className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
+              <button
+                type="button"
+                onClick={() => setMenuPago(p)}
+                aria-label="Más acciones para este pago"
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-grafito/50 hover:bg-fondo"
+              >
+                <MoreVertical className="h-4 w-4" />
+              </button>
             </div>
             {estadoComprobante?.id === p.id && (
               <p className="mt-2 text-[11px] text-grafito/50">
@@ -388,6 +512,87 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
           </button>
         </section>
       )}
+
+      {/* ── Menú de acciones por pago ── */}
+      <AnimatePresence>
+        {menuPago && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] grid place-items-end bg-grafito/40 backdrop-blur-sm sm:place-items-center"
+            onClick={() => setMenuPago(null)}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Acciones del pago"
+          >
+            <motion.div
+              initial={{ y: 48 }}
+              animate={{ y: 0 }}
+              exit={{ y: 48 }}
+              transition={{ type: "spring", stiffness: 320, damping: 30 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md space-y-1 rounded-t-3xl bg-tarjeta p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] shadow-2xl sm:rounded-3xl"
+            >
+              <div className="flex items-center justify-between px-2 py-2">
+                <p className="font-black uppercase tracking-wide text-grafito">
+                  {soles.format(menuPago.monto_recibido)}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setMenuPago(null)}
+                  aria-label="Cerrar"
+                  className="rounded-lg p-1.5 text-grafito/40 hover:bg-fondo"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {menuPago.evidencia_url && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void verEvidencia(menuPago.evidencia_url as string);
+                    setMenuPago(null);
+                  }}
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold text-grafito hover:bg-fondo"
+                >
+                  <ImageIcon className="h-4 w-4 text-grafito/50" /> Ver comprobante del pago
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => void enviarComprobantePago(menuPago)}
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold text-grafito hover:bg-fondo"
+              >
+                <Share2 className="h-4 w-4 text-grafito/50" /> Enviar comprobante por WhatsApp
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void descargarContrato();
+                  setMenuPago(null);
+                }}
+                disabled={generandoContrato}
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold text-grafito hover:bg-fondo disabled:opacity-50"
+              >
+                <Download className="h-4 w-4 text-grafito/50" /> Descargar contrato
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void enviarContratoWhatsApp();
+                  setMenuPago(null);
+                }}
+                disabled={generandoContrato}
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold text-grafito hover:bg-fondo disabled:opacity-50"
+              >
+                <MessageCircle className="h-4 w-4 text-grafito/50" /> Enviar contrato por WhatsApp
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── Lightbox de evidencia ── */}
       <AnimatePresence>

@@ -6,18 +6,23 @@ export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs));
 }
 
+export type BucketPrivado = "vehiculos" | "clientes" | "evidencias" | "contratos" | "garantias";
+
 /**
- * Firma una URL de un objeto en un bucket privado (1 hora).
+ * Firma una URL de un objeto en un bucket privado (por defecto 1 hora).
  * Las tablas guardan la RUTA interna (`carpeta/archivo.jpg`),
  * nunca URLs públicas — los buckets son privados.
+ * `segundos` se sube (ej. 7 días) para documentos que el cliente
+ * puede querer reabrir más tarde, como el contrato en PDF.
  */
 export async function urlFirmada(
-  bucket: "vehiculos" | "clientes" | "evidencias",
+  bucket: BucketPrivado,
   ruta: string,
+  segundos = 3600,
 ): Promise<string | null> {
   const { data, error } = await supabase.storage
     .from(bucket)
-    .createSignedUrl(ruta, 3600);
+    .createSignedUrl(ruta, segundos);
   return error ? null : data.signedUrl;
 }
 
@@ -29,7 +34,7 @@ export async function urlFirmada(
  * Supabase, no el orden del array, que no está garantizado).
  */
 export async function urlFirmadas(
-  bucket: "vehiculos" | "clientes" | "evidencias",
+  bucket: BucketPrivado,
   rutas: string[],
 ): Promise<Map<string, string>> {
   if (rutas.length === 0) return new Map();
@@ -45,9 +50,9 @@ export async function urlFirmadas(
   return mapa;
 }
 
-/** Sube una imagen y devuelve la ruta interna guardable en BD. */
-export async function subirImagen(
-  bucket: "vehiculos" | "clientes" | "evidencias",
+/** Sube un archivo (imagen o PDF) y devuelve la ruta interna guardable en BD. */
+export async function subirArchivo(
+  bucket: BucketPrivado,
   carpeta: string,
   file: File,
 ): Promise<string> {
@@ -58,6 +63,9 @@ export async function subirImagen(
   if (error) throw error;
   return ruta;
 }
+
+/** @deprecated usa `subirArchivo` — se mantiene como alias para no tocar cada llamada existente. */
+export const subirImagen = subirArchivo;
 
 /** Abre un chat de WhatsApp con un mensaje pre-redactado (API pública wa.me). */
 export function abrirWhatsApp(telefono: string, mensaje: string): void {

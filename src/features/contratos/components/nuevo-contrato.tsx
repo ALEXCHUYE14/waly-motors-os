@@ -3,18 +3,21 @@
 /**
  * WALY MOTORS OS — Nuevo Contrato
  * ───────────────────────────────
- * Wizard de 4 pasos, mobile-first:
- *   1. Cliente     (búsqueda por nombre/documento)
- *   2. Vehículo    (solo mototaxis disponibles, con foto)
- *   3. Condiciones (alquiler o venta a crédito, cuotas, frecuencia)
- *   4. Confirmar   (resumen legal-friendly)
+ * Wizard de 5 pasos, mobile-first:
+ *   1. Cliente             (búsqueda por nombre/documento)
+ *   2. Vehículo            (solo mototaxis disponibles, con foto)
+ *   3. Condiciones         (alquiler o venta a crédito, cuotas, frecuencia)
+ *   4. Firma y garantías   (firma táctil + documentos de garantía, ambos obligatorios)
+ *   5. Confirmar           (resumen legal-friendly)
  *
  * Llama a la RPC atómica `crear_contrato`: bloquea el vehículo,
  * valida disponibilidad, registra la cuota inicial como primer
  * pago y cambia el estado de la mototaxi — todo en una transacción.
+ * Después genera el contrato en PDF (firma + garantías incluidas)
+ * y lo sube al bucket privado `contratos` (ver useCrearContrato).
  */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -26,6 +29,10 @@ import {
   FileSignature,
   KeyRound,
   CalendarDays,
+  Paperclip,
+  FileText,
+  ImageIcon,
+  X,
 } from "lucide-react";
 import { soles, type FrecuenciaPago } from "@/lib/supabase";
 import {
@@ -35,6 +42,7 @@ import {
   type ClienteBasico,
   type VehiculoDisponible,
 } from "@/features/contratos/hooks/use-contratos";
+import { FirmaCanvas, type FirmaCanvasHandle } from "@/components/ui/firma-canvas";
 import { cn } from "@/lib/utils";
 
 // ── Constantes ───────────────────────────────────────────────
@@ -89,6 +97,12 @@ export default function NuevoContrato() {
     new Date().toISOString().slice(0, 10),
   );
 
+  // Firma y garantías (paso 4, ambos obligatorios)
+  const firmaRef = useRef<FirmaCanvasHandle>(null);
+  const inputGarantias = useRef<HTMLInputElement>(null);
+  const [firmaVacia, setFirmaVacia] = useState(true);
+  const [documentosGarantia, setDocumentosGarantia] = useState<File[]>([]);
+
   const clientes = useBuscarClientes(terminoCliente);
   const vehiculos = useVehiculosDisponibles();
   const crear = useCrearContrato();
@@ -105,6 +119,8 @@ export default function NuevoContrato() {
     ? Math.ceil((nTotal - nInicial) / nCuota)
     : 0;
 
+  const firmaGarantiasValidas = !firmaVacia && documentosGarantia.length > 0;
+
   function seleccionarVehiculo(v: VehiculoDisponible) {
     setVehiculo(v);
     // Sugerencias según tipo de contrato y precios del vehículo
@@ -117,17 +133,31 @@ export default function NuevoContrato() {
     setPaso(3);
   }
 
+  function agregarGarantias(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    setDocumentosGarantia((prev) => [...prev, ...files]);
+    e.target.value = "";
+  }
+
+  function quitarGarantia(idx: number) {
+    setDocumentosGarantia((prev) => prev.filter((_, i) => i !== idx));
+  }
+
   function confirmar() {
-    if (!cliente || !vehiculo || !condicionesValidas) return;
+    if (!cliente || !vehiculo || !condicionesValidas || !firmaGarantiasValidas) return;
+    const firmaBase64 = firmaRef.current?.exportarBase64();
+    if (!firmaBase64) return;
     crear.mutate({
-      clienteId: cliente.id,
-      vehiculoId: vehiculo.id,
+      cliente,
+      vehiculo,
       tipo,
       montoTotal: nTotal,
       cuotaInicial: nInicial,
       montoCuota: nCuota,
       frecuencia,
       fechaInicio,
+      firmaBase64,
+      documentosGarantia,
     });
   }
 
@@ -175,7 +205,7 @@ export default function NuevoContrato() {
           )}
           <h1 className="text-lg font-black uppercase tracking-tight text-grafito">Nuevo contrato</h1>
         </div>
-        <Progreso paso={paso} total={4} />
+        <Progreso paso={paso} total={5} />
       </header>
 
       <AnimatePresence mode="wait">
@@ -423,14 +453,95 @@ export default function NuevoContrato() {
               onClick={() => setPaso(4)}
               className="w-full rounded-xl bg-amarillo py-4 font-bold text-grafito active:scale-[0.98] disabled:opacity-40"
             >
+              Continuar
+            </button>
+          </motion.section>
+        )}
+
+        {/* ══════════ PASO 4: FIRMA Y GARANTÍAS ══════════ */}
+        {paso === 4 && (
+          <motion.section key="c4" {...slide} aria-label="Firma y garantías" className="space-y-5">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40">
+                Firma del cliente
+              </p>
+              <p className="mb-2 text-xs text-grafito/50">
+                Pide al cliente que firme directamente en la pantalla.
+              </p>
+              <FirmaCanvas ref={firmaRef} onCambio={setFirmaVacia} />
+            </div>
+
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40">
+                Documentos de garantía
+              </p>
+              <p className="mb-2 text-xs text-grafito/50">
+                Fotos o PDF de título de propiedad, documento de identidad, recibos, etc.
+              </p>
+              <input
+                ref={inputGarantias}
+                type="file"
+                accept="image/*,application/pdf"
+                multiple
+                onChange={agregarGarantias}
+                className="sr-only"
+                aria-label="Adjuntar documentos de garantía"
+              />
+              <button
+                type="button"
+                onClick={() => inputGarantias.current?.click()}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-borde py-4 text-sm font-semibold text-grafito/60"
+              >
+                <Paperclip className="h-4 w-4" /> Adjuntar documentos
+              </button>
+
+              {documentosGarantia.length > 0 && (
+                <ul className="mt-3 space-y-2">
+                  {documentosGarantia.map((f, i) => (
+                    <li
+                      key={`${f.name}-${i}`}
+                      className="flex items-center gap-2 rounded-xl border border-borde bg-tarjeta p-2.5"
+                    >
+                      {f.type.startsWith("image/") ? (
+                        <ImageIcon className="h-4 w-4 shrink-0 text-cobre" />
+                      ) : (
+                        <FileText className="h-4 w-4 shrink-0 text-cobre" />
+                      )}
+                      <span className="min-w-0 flex-1 truncate text-xs text-grafito">{f.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => quitarGarantia(i)}
+                        aria-label={`Quitar ${f.name}`}
+                        className="shrink-0 rounded p-1 text-grafito/40 hover:bg-fondo"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {!firmaGarantiasValidas && (
+              <p className="text-xs text-grafito/50">
+                Se necesita la firma del cliente y al menos un documento de garantía para continuar.
+              </p>
+            )}
+
+            <button
+              type="button"
+              disabled={!firmaGarantiasValidas}
+              onClick={() => setPaso(5)}
+              className="w-full rounded-xl bg-amarillo py-4 font-bold text-grafito active:scale-[0.98] disabled:opacity-40"
+            >
               Revisar contrato
             </button>
           </motion.section>
         )}
 
-        {/* ══════════ PASO 4: CONFIRMAR ══════════ */}
-        {paso === 4 && cliente && vehiculo && (
-          <motion.section key="c4" {...slide} aria-label="Confirmar contrato" className="space-y-5">
+        {/* ══════════ PASO 5: CONFIRMAR ══════════ */}
+        {paso === 5 && cliente && vehiculo && (
+          <motion.section key="c5" {...slide} aria-label="Confirmar contrato" className="space-y-5">
             <dl className="space-y-2 rounded-2xl border border-borde bg-tarjeta p-4 text-sm shadow-card">
               {[
                 ["Cliente", cliente.nombre_completo],
@@ -442,6 +553,7 @@ export default function NuevoContrato() {
                 ["Cuota", `${soles.format(nCuota)} · ${frecuencia}`],
                 ["Cuotas estimadas", String(numCuotasEstimadas)],
                 ["Inicio", new Date(`${fechaInicio}T12:00:00`).toLocaleDateString("es-PE")],
+                ["Garantías adjuntas", String(documentosGarantia.length)],
               ].map(([k, v]) => (
                 <div key={k} className="flex justify-between gap-4">
                   <dt className="text-grafito/50">{k}</dt>
@@ -453,7 +565,8 @@ export default function NuevoContrato() {
             <p className="text-xs text-grafito/50">
               Al confirmar, la mototaxi pasará a estado{" "}
               <span className="font-bold">{tipo === "alquiler" ? "alquilado" : "vendido"}</span>
-              {nInicial > 0 && " y la cuota inicial quedará registrada como primer pago"}.
+              {nInicial > 0 && " y la cuota inicial quedará registrada como primer pago"}. Se generará
+              el contrato en PDF con la firma capturada.
             </p>
 
             {crear.isError && (

@@ -147,3 +147,91 @@ export function useCambiarEstadoVehiculo() {
     },
   });
 }
+
+// ── Mantenimiento ─────────────────────────────────────────────
+export type TipoMantenimiento = "preventivo" | "correctivo" | "llantas" | "motor" | "otro";
+
+export interface Mantenimiento {
+  id: string;
+  tipo: TipoMantenimiento;
+  descripcion: string | null;
+  costo: number | null;
+  kilometraje_servicio: number;
+  fecha_servicio: string;
+  proximo_km: number | null;
+  proximo_fecha: string | null;
+  created_at: string;
+}
+
+export interface DatosMantenimiento {
+  tipo: TipoMantenimiento;
+  descripcion: string;
+  costo: number | null;
+  kilometrajeServicio: number;
+  fechaServicio: string;
+  proximoKm: number | null;
+  proximoFecha: string | null;
+}
+
+export interface VehiculoEnAlerta {
+  vehiculo_id: string;
+  placa: string;
+  motivo: "km" | "fecha";
+}
+
+export function useMantenimientos(vehiculoId: string) {
+  return useQuery({
+    queryKey: ["mantenimientos", vehiculoId],
+    enabled: Boolean(vehiculoId),
+    queryFn: async (): Promise<Mantenimiento[]> => {
+      const { data, error } = await supabase
+        .from("mantenimientos")
+        .select(
+          "id, tipo, descripcion, costo, kilometraje_servicio, fecha_servicio, proximo_km, proximo_fecha, created_at",
+        )
+        .eq("vehiculo_id", vehiculoId)
+        .order("fecha_servicio", { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+}
+
+export function useRegistrarMantenimiento(vehiculoId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (d: DatosMantenimiento) => {
+      const { error } = await supabase.rpc("registrar_mantenimiento", {
+        p_vehiculo_id: vehiculoId,
+        p_tipo: d.tipo,
+        p_descripcion: d.descripcion || null,
+        p_costo: d.costo,
+        p_kilometraje_servicio: d.kilometrajeServicio,
+        p_fecha_servicio: d.fechaServicio,
+        p_proximo_km: d.proximoKm,
+        p_proximo_fecha: d.proximoFecha,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["mantenimientos", vehiculoId] });
+      void queryClient.invalidateQueries({ queryKey: ["vehiculo", vehiculoId] });
+      void queryClient.invalidateQueries({ queryKey: ["vehiculos"] });
+      void queryClient.invalidateQueries({ queryKey: ["vehiculos-alerta-mantenimiento"] });
+      void queryClient.invalidateQueries({ queryKey: ["kpis-dashboard"] });
+    },
+  });
+}
+
+export function useVehiculosAlertaMantenimiento() {
+  return useQuery({
+    queryKey: ["vehiculos-alerta-mantenimiento"],
+    staleTime: 60_000,
+    queryFn: async (): Promise<VehiculoEnAlerta[]> => {
+      const { data, error } = await supabase.rpc("vehiculos_alerta_mantenimiento");
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+}

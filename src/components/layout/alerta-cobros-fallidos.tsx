@@ -53,21 +53,21 @@ export function AlertaCobrosFallidos() {
         </div>
         <ul className="space-y-1 pl-6 text-xs">
           {fallidos.map((f) => (
-            <li key={f.id} className="flex items-center justify-between gap-3">
-              <span>
-                {soles.format(f.monto)} · {f.error}
-              </span>
-              <button
-                type="button"
-                onClick={() => descartarCobroFallido(f.id)}
-                className="shrink-0 rounded p-1 hover:bg-oxido/10"
-                aria-label="Marcar como resuelto"
-                title="Marcar como resuelto"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </li>
-          ))}
+          <li key={f.id} className="flex items-center justify-between gap-3">
+            <span>
+              {soles.format(f.monto)} · {f.error}
+            </span>
+            <button
+              type="button"
+              onClick={() => descartarCobroFallido(f.id)}
+              className="shrink-0 rounded p-1 hover:bg-oxido/10"
+              aria-label="Marcar como resuelto"
+              title="Marcar como resuelto"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </li>
+        ))}
         </ul>
       </div>
     </div>

@@ -3,8 +3,9 @@
 /**
  * WALY MOTORS OS — Detalle de Contrato
  * Barra de progreso financiero (RPC resumen_contrato),
- * historial de pagos con evidencias firmadas y botón de
- * finalización (RPC finalizar_contrato, libera la mototaxi).
+ * historial de pagos con evidencias firmadas y comprobante en
+ * PDF por cada pago, y botón de finalización (RPC finalizar_contrato,
+ * libera la mototaxi).
  */
 
 import { useState } from "react";
@@ -18,10 +19,12 @@ import {
   FileSignature,
   Flag,
   ImageIcon,
+  Share2,
   X,
 } from "lucide-react";
 import { supabase, soles, type MetodoPago } from "@/lib/supabase";
 import { useFinalizarContrato } from "@/features/contratos/hooks/use-contratos";
+import { generarComprobantePago, compartirComprobante, type ResultadoComprobante } from "@/lib/comprobante";
 import { cn, urlFirmada } from "@/lib/utils";
 
 // ── Tipos ────────────────────────────────────────────────────
@@ -35,6 +38,11 @@ interface ResumenContrato {
   pct_avance: number;
   num_pagos: number;
   ultimo_pago: string | null;
+  cliente_nombre: string;
+  cliente_documento: string;
+  cliente_telefono: string | null;
+  vehiculo_placa: string;
+  vehiculo_modelo: string;
 }
 
 interface PagoContrato {
@@ -61,6 +69,12 @@ const fechaHora = new Intl.DateTimeFormat("es-PE", {
   hour: "2-digit",
   minute: "2-digit",
 });
+
+const MENSAJE_COMPROBANTE: Record<ResultadoComprobante, string> = {
+  compartido: "Comprobante enviado.",
+  descargado: "Comprobante descargado — ábrelo en WhatsApp para adjuntarlo.",
+  cancelado: "Envío cancelado.",
+};
 
 // ── Hooks ────────────────────────────────────────────────────
 function useResumen(contratoId: string) {
@@ -103,6 +117,8 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
   const [confirmarFin, setConfirmarFin] = useState(false);
   const [evidenciaAbierta, setEvidenciaAbierta] = useState<string | null>(null);
   const [errorFinalizar, setErrorFinalizar] = useState<string | null>(null);
+  const [comprobanteEnCurso, setComprobanteEnCurso] = useState<string | null>(null);
+  const [estadoComprobante, setEstadoComprobante] = useState<{ id: string; resultado: ResultadoComprobante } | null>(null);
 
   const r = resumen.data;
 
@@ -111,21 +127,53 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
     if (url) setEvidenciaAbierta(url);
   }
 
+  async function enviarComprobante(p: PagoContrato) {
+    if (!r) return;
+    setComprobanteEnCurso(p.id);
+    setEstadoComprobante(null);
+    try {
+      const doc = generarComprobantePago({
+        folio: p.id.slice(0, 8).toUpperCase(),
+        fechaIso: p.fecha_pago,
+        clienteNombre: r.cliente_nombre,
+        clienteDocumento: r.cliente_documento,
+        vehiculoPlaca: r.vehiculo_placa,
+        vehiculoModelo: r.vehiculo_modelo,
+        monto: p.monto_recibido,
+        metodo: p.metodo_pago,
+        observaciones: p.observaciones,
+        saldoPendiente: r.saldo,
+        recaudador: p.perfiles?.nombre ?? null,
+      });
+      const primerNombre = r.cliente_nombre.split(" ")[0];
+      const mensaje = `Hola ${primerNombre}, aquí tu comprobante de pago de ${soles.format(p.monto_recibido)} — Waly Motors. ¡Gracias por tu preferencia!`;
+      const resultado = await compartirComprobante(
+        doc,
+        `comprobante-${r.vehiculo_placa}-${p.id.slice(0, 6)}.pdf`,
+        r.cliente_telefono,
+        mensaje,
+      );
+      setEstadoComprobante({ id: p.id, resultado });
+    } finally {
+      setComprobanteEnCurso(null);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-md space-y-6 p-4 sm:p-6">
       <header className="flex items-center justify-between">
-        <h1 className="flex items-center gap-2 text-lg font-black uppercase tracking-tight">
-          <FileSignature className="h-5 w-5 text-amarillo" /> Contrato
+        <h1 className="flex items-center gap-2 text-lg font-black uppercase tracking-tight text-grafito">
+          <FileSignature className="h-5 w-5 text-cobre" /> Contrato
         </h1>
         {r && (
           <span
             className={cn(
               "rounded-lg px-2.5 py-1 text-xs font-bold",
               r.estado === "activo"
-                ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                ? "bg-emerald-500/15 text-emerald-600"
                 : r.estado === "vencido"
                   ? "bg-oxido/15 text-oxido"
-                  : "bg-neutral-500/15 text-neutral-500",
+                  : "bg-grafito/10 text-grafito/60",
             )}
           >
             {r.estado === "activo" ? "Activo" : r.estado === "vencido" ? "Vencido" : "Finalizado"}
@@ -135,15 +183,23 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
 
       {/* ── Progreso financiero ── */}
       {resumen.isLoading ? (
-        <div className="h-36 animate-pulse rounded-2xl bg-neutral-200/60 dark:bg-neutral-800/60" />
+        <div className="h-36 animate-pulse rounded-2xl bg-borde/60" />
       ) : r ? (
         <section
           aria-label="Progreso financiero"
-          className="space-y-3 rounded-2xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-asfalto"
+          className="space-y-3 rounded-2xl border border-borde bg-tarjeta p-4 shadow-card"
         >
+          <div>
+            <p className="text-sm font-semibold text-grafito">{r.cliente_nombre}</p>
+            <p className="text-xs text-grafito/50">
+              Doc. <span className="font-mono">{r.cliente_documento}</span> · Placa{" "}
+              <span className="font-mono font-bold">{r.vehiculo_placa}</span>
+            </p>
+          </div>
+
           <div className="flex items-baseline justify-between">
-            <p className="text-3xl font-black tabular-nums">{r.pct_avance}%</p>
-            <p className="text-xs font-semibold uppercase tracking-widest text-neutral-400">
+            <p className="text-3xl font-black tabular-nums text-grafito">{r.pct_avance}%</p>
+            <p className="text-xs font-semibold uppercase tracking-widest text-grafito/40">
               {r.tipo === "alquiler" ? "Alquiler" : "Venta a crédito"} · {r.num_pagos} pagos
             </p>
           </div>
@@ -153,7 +209,7 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
             aria-valuenow={r.pct_avance}
             aria-valuemin={0}
             aria-valuemax={100}
-            className="h-3 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800"
+            className="h-3 overflow-hidden rounded-full bg-borde"
           >
             <motion.div
               initial={{ width: 0 }}
@@ -174,9 +230,9 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
                 ["Total", soles.format(r.monto_total), ""],
               ] as const
             ).map(([k, v, extra]) => (
-              <div key={k} className="rounded-xl bg-neutral-100 p-2 dark:bg-neutral-900">
-                <dt className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400">{k}</dt>
-                <dd className={cn("font-black tabular-nums", extra)}>{v}</dd>
+              <div key={k} className="rounded-xl bg-fondo p-2">
+                <dt className="text-[10px] font-semibold uppercase tracking-widest text-grafito/40">{k}</dt>
+                <dd className={cn("font-black tabular-nums text-grafito", extra)}>{v}</dd>
               </div>
             ))}
           </dl>
@@ -189,55 +245,72 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
 
       {/* ── Historial de pagos ── */}
       <section aria-label="Historial de pagos" className="space-y-2">
-        <h2 className="text-sm font-black uppercase tracking-widest text-neutral-400">
+        <h2 className="text-sm font-black uppercase tracking-widest text-grafito/40">
           Historial de pagos
         </h2>
 
         {pagos.isLoading &&
           [0, 1, 2].map((i) => (
-            <div key={i} className="h-16 animate-pulse rounded-2xl bg-neutral-200/60 dark:bg-neutral-800/60" />
+            <div key={i} className="h-16 animate-pulse rounded-2xl bg-borde/60" />
           ))}
 
         {pagos.data?.map((p) => (
-          <div
-            key={p.id}
-            className="flex items-center gap-3 rounded-2xl border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-asfalto"
-          >
-            <span
-              className={cn(
-                "grid h-10 w-10 shrink-0 place-items-center rounded-xl",
-                p.estado === "completado"
-                  ? "bg-emerald-500/15 text-emerald-500"
-                  : p.estado === "parcial"
-                    ? "bg-amarillo/20 text-asfalto dark:text-amarillo"
-                    : "bg-oxido/15 text-oxido",
-              )}
-            >
-              {ICONO_METODO[p.metodo_pago]}
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="font-black tabular-nums">{soles.format(p.monto_recibido)}</p>
-              <p className="truncate text-xs text-neutral-500">
-                {fechaHora.format(new Date(p.fecha_pago))} · {p.metodo_pago}
-                {p.perfiles?.nombre && ` · ${p.perfiles.nombre}`}
-                {p.estado === "parcial" && " · parcial"}
-              </p>
-            </div>
-            {p.evidencia_url && (
-              <button
-                type="button"
-                onClick={() => void verEvidencia(p.evidencia_url as string)}
-                aria-label="Ver comprobante"
-                className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-neutral-100 text-neutral-500 dark:bg-neutral-900"
+          <div key={p.id} className="rounded-2xl border border-borde bg-tarjeta p-3 shadow-card">
+            <div className="flex items-center gap-3">
+              <span
+                className={cn(
+                  "grid h-10 w-10 shrink-0 place-items-center rounded-xl",
+                  p.estado === "completado"
+                    ? "bg-emerald-500/15 text-emerald-500"
+                    : p.estado === "parcial"
+                      ? "bg-amarillo/20 text-grafito"
+                      : "bg-oxido/15 text-oxido",
+                )}
               >
-                <ImageIcon className="h-4 w-4" />
-              </button>
+                {ICONO_METODO[p.metodo_pago]}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="font-black tabular-nums text-grafito">{soles.format(p.monto_recibido)}</p>
+                <p className="truncate text-xs text-grafito/50">
+                  {fechaHora.format(new Date(p.fecha_pago))} · {p.metodo_pago}
+                  {p.perfiles?.nombre && ` · ${p.perfiles.nombre}`}
+                  {p.estado === "parcial" && " · parcial"}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => void enviarComprobante(p)}
+                  disabled={comprobanteEnCurso === p.id || !r}
+                  aria-label="Enviar comprobante por WhatsApp"
+                  title="Enviar comprobante"
+                  className="grid h-10 w-10 place-items-center rounded-xl bg-cobre/10 text-cobre disabled:opacity-40"
+                >
+                  <Share2 className="h-4 w-4" />
+                </button>
+                {p.evidencia_url && (
+                  <button
+                    type="button"
+                    onClick={() => void verEvidencia(p.evidencia_url as string)}
+                    aria-label="Ver comprobante"
+                    title="Ver evidencia"
+                    className="grid h-10 w-10 place-items-center rounded-xl bg-fondo text-grafito/50"
+                  >
+                    <ImageIcon className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+            {estadoComprobante?.id === p.id && (
+              <p className="mt-2 text-[11px] text-grafito/50">
+                {MENSAJE_COMPROBANTE[estadoComprobante.resultado]}
+              </p>
             )}
           </div>
         ))}
 
         {pagos.isSuccess && pagos.data.length === 0 && (
-          <p className="rounded-2xl border border-dashed border-neutral-300 p-4 text-center text-sm text-neutral-500 dark:border-neutral-700">
+          <p className="rounded-2xl border border-dashed border-borde p-4 text-center text-sm text-grafito/50">
             Aún no hay pagos registrados en este contrato.
           </p>
         )}
@@ -256,7 +329,7 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
             </button>
           ) : (
             <div className="space-y-3 rounded-2xl border border-oxido/30 bg-oxido/5 p-4">
-              <p className="text-sm">
+              <p className="text-sm text-grafito">
                 {r.tipo === "alquiler"
                   ? "Se cerrará el contrato y la mototaxi volverá a estado disponible."
                   : "Se cerrará el contrato de venta a crédito. La mototaxi permanecerá como vendida."}
@@ -276,7 +349,7 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
                 <button
                   type="button"
                   onClick={() => setConfirmarFin(false)}
-                  className="flex-1 rounded-xl border border-neutral-200 py-3 text-sm font-semibold dark:border-neutral-700"
+                  className="flex-1 rounded-xl border border-borde py-3 text-sm font-semibold text-grafito"
                 >
                   Cancelar
                 </button>
@@ -309,7 +382,7 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
           <button
             type="button"
             onClick={() => router.push("/pagos/nuevo")}
-            className="w-full rounded-xl bg-amarillo py-3.5 font-bold text-asfalto active:scale-[0.98]"
+            className="w-full rounded-xl bg-amarillo py-3.5 font-bold text-grafito active:scale-[0.98]"
           >
             Registrar un cobro
           </button>
@@ -327,7 +400,7 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
             aria-modal="true"
             aria-label="Comprobante de pago"
             onClick={() => setEvidenciaAbierta(null)}
-            className="fixed inset-0 z-[60] grid place-items-center bg-black/80 p-4 backdrop-blur-sm"
+            className="fixed inset-0 z-[60] grid place-items-center bg-grafito/80 p-4 backdrop-blur-sm"
           >
             <button
               type="button"

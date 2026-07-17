@@ -9,13 +9,10 @@
 export function PantallaCargando({ filas = 4 }: { filas?: number }) {
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4 sm:p-6" aria-busy="true" aria-label="Cargando">
-      <div className="h-8 w-40 animate-pulse rounded-lg bg-neutral-200/60 dark:bg-neutral-800/60" />
+      <div className="h-8 w-40 animate-pulse rounded-lg bg-borde/60" />
       <div className="space-y-3">
         {Array.from({ length: filas }, (_, i) => (
-          <div
-            key={i}
-            className="h-16 animate-pulse rounded-2xl bg-neutral-200/60 dark:bg-neutral-800/60"
-          />
+          <div key={i} className="h-16 animate-pulse rounded-2xl bg-borde/60" />
         ))}
       </div>
     </div>

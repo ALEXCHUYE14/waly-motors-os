@@ -22,6 +22,7 @@ export interface KpisDashboard {
   balance_hoy: number;
   pct_flota_activa: number;
   clientes_en_mora: number;
+  vehiculos_en_alerta_mantenimiento: number;
 }
 
 // ── Cliente browser (singleton) ──────────────────────────────

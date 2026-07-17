@@ -61,7 +61,7 @@ function Progreso({ paso, total }: { paso: number; total: number }) {
           className={cn(
             "h-1.5 rounded-full transition-all",
             n === paso ? "w-8 bg-amarillo" : "w-4",
-            n < paso ? "bg-amarillo/60" : n > paso ? "bg-neutral-200 dark:bg-neutral-800" : "",
+            n < paso ? "bg-amarillo/60" : n > paso ? "bg-borde" : "",
           )}
         />
       ))}
@@ -142,18 +142,18 @@ export default function NuevoContrato() {
         <span className="grid h-20 w-20 place-items-center rounded-3xl bg-emerald-500/15 text-emerald-500">
           <FileSignature className="h-10 w-10" />
         </span>
-        <h1 className="text-xl font-black uppercase tracking-tight">Contrato creado</h1>
-        <p className="text-sm text-neutral-500">
+        <h1 className="text-xl font-black uppercase tracking-tight text-grafito">Contrato creado</h1>
+        <p className="text-sm text-grafito/50">
           {cliente?.nombre_completo} · placa{" "}
           <span className="font-mono font-bold">{vehiculo?.placa}</span>
           {nInicial > 0 && ` · cuota inicial de ${soles.format(nInicial)} registrada`}.
         </p>
         <button
           type="button"
-          onClick={() => router.push("/dashboard")}
-          className="mt-2 w-full rounded-xl bg-amarillo py-3.5 font-bold text-asfalto active:scale-[0.98]"
+          onClick={() => router.push("/contratos")}
+          className="mt-2 w-full rounded-xl bg-amarillo py-3.5 font-bold text-grafito active:scale-[0.98]"
         >
-          Ir al Dashboard
+          Ver contratos
         </button>
       </motion.div>
     );
@@ -168,12 +168,12 @@ export default function NuevoContrato() {
               type="button"
               onClick={() => setPaso((p) => p - 1)}
               aria-label="Volver al paso anterior"
-              className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              className="rounded-lg p-1.5 text-grafito/40 hover:bg-fondo"
             >
               <ChevronLeft className="h-5 w-5" />
             </button>
           )}
-          <h1 className="text-lg font-black uppercase tracking-tight">Nuevo contrato</h1>
+          <h1 className="text-lg font-black uppercase tracking-tight text-grafito">Nuevo contrato</h1>
         </div>
         <Progreso paso={paso} total={4} />
       </header>
@@ -183,7 +183,7 @@ export default function NuevoContrato() {
         {paso === 1 && (
           <motion.section key="c1" {...slide} aria-label="Seleccionar cliente">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-neutral-400" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-grafito/30" />
               <input
                 autoFocus
                 type="search"
@@ -191,11 +191,7 @@ export default function NuevoContrato() {
                 onChange={(e) => setTerminoCliente(e.target.value)}
                 placeholder="Nombre o número de documento…"
                 aria-label="Buscar cliente"
-                className={cn(
-                  "w-full rounded-2xl border border-neutral-200 bg-white py-3.5 pl-11 pr-4 text-base",
-                  "dark:border-neutral-800 dark:bg-asfalto",
-                  "focus-visible:outline-2 focus-visible:outline-amarillo",
-                )}
+                className="w-full rounded-2xl border border-borde bg-tarjeta py-3.5 pl-11 pr-4 text-base text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
               />
             </div>
 
@@ -208,20 +204,20 @@ export default function NuevoContrato() {
                       setCliente(c);
                       setPaso(2);
                     }}
-                    className="flex w-full items-center gap-3 rounded-2xl border border-neutral-200 bg-white p-3 text-left active:scale-[0.99] dark:border-neutral-800 dark:bg-asfalto"
+                    className="flex w-full items-center gap-3 rounded-2xl border border-borde bg-tarjeta p-3 text-left shadow-card active:scale-[0.99]"
                   >
-                    <span className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-neutral-200 dark:bg-neutral-800">
+                    <span className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-fondo">
                       {c.foto_perfil ? (
                         <Image src={c.foto_perfil} alt="" fill className="object-cover" sizes="44px" />
                       ) : (
-                        <span className="grid h-full w-full place-items-center font-black text-neutral-400">
+                        <span className="grid h-full w-full place-items-center font-black text-grafito/30">
                           {c.nombre_completo.charAt(0)}
                         </span>
                       )}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate font-semibold">{c.nombre_completo}</span>
-                      <span className="block text-xs text-neutral-500">
+                      <span className="block truncate font-semibold text-grafito">{c.nombre_completo}</span>
+                      <span className="block text-xs text-grafito/50">
                         Doc. <span className="font-mono">{c.numero_documento}</span>
                       </span>
                     </span>
@@ -230,12 +226,12 @@ export default function NuevoContrato() {
               ))}
 
               {clientes.isSuccess && clientes.data.length === 0 && (
-                <li className="rounded-2xl border border-dashed border-neutral-300 p-4 text-center text-sm text-neutral-500 dark:border-neutral-700">
+                <li className="rounded-2xl border border-dashed border-borde p-4 text-center text-sm text-grafito/50">
                   No existe «{terminoCliente}». Regístralo primero en{" "}
                   <button
                     type="button"
                     onClick={() => router.push("/clientes")}
-                    className="font-bold text-amarillo underline"
+                    className="font-bold text-cobre underline"
                   >
                     Clientes
                   </button>
@@ -251,7 +247,7 @@ export default function NuevoContrato() {
           <motion.section key="c2" {...slide} aria-label="Seleccionar vehículo" className="space-y-3">
             {vehiculos.isLoading &&
               [0, 1].map((i) => (
-                <div key={i} className="h-24 animate-pulse rounded-2xl bg-neutral-200/60 dark:bg-neutral-800/60" />
+                <div key={i} className="h-24 animate-pulse rounded-2xl bg-borde/60" />
               ))}
 
             {vehiculos.data?.map((v) => (
@@ -259,21 +255,21 @@ export default function NuevoContrato() {
                 key={v.id}
                 type="button"
                 onClick={() => seleccionarVehiculo(v)}
-                className="flex w-full items-center gap-3 rounded-2xl border border-neutral-200 bg-white p-3 text-left active:scale-[0.99] dark:border-neutral-800 dark:bg-asfalto"
+                className="flex w-full items-center gap-3 rounded-2xl border border-borde bg-tarjeta p-3 text-left shadow-card active:scale-[0.99]"
               >
-                <span className="relative h-16 w-20 shrink-0 overflow-hidden rounded-xl bg-neutral-200 dark:bg-neutral-800">
+                <span className="relative h-16 w-20 shrink-0 overflow-hidden rounded-xl bg-fondo">
                   {v.fotos[0] ? (
                     <Image src={v.fotos[0]} alt={v.modelo} fill className="object-cover" sizes="80px" />
                   ) : (
-                    <Bike className="m-auto h-full w-8 text-neutral-400" />
+                    <Bike className="m-auto h-full w-8 text-grafito/30" />
                   )}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block font-mono text-base font-black">{v.placa}</span>
-                  <span className="block truncate text-sm text-neutral-500">
+                  <span className="block font-mono text-base font-black text-grafito">{v.placa}</span>
+                  <span className="block truncate text-sm text-grafito/50">
                     {v.modelo} {v.anio} · {v.kilometraje.toLocaleString("es-PE")} km
                   </span>
-                  <span className="block text-xs font-semibold text-neutral-600 dark:text-neutral-300">
+                  <span className="block text-xs font-semibold text-grafito/70">
                     {v.precio_alquiler_diario && `Alq. ${soles.format(v.precio_alquiler_diario)}/día`}
                     {v.precio_alquiler_diario && v.precio_venta && " · "}
                     {v.precio_venta && `Venta ${soles.format(v.precio_venta)}`}
@@ -283,7 +279,7 @@ export default function NuevoContrato() {
             ))}
 
             {vehiculos.isSuccess && vehiculos.data.length === 0 && (
-              <p className="rounded-2xl border border-dashed border-neutral-300 p-4 text-center text-sm text-neutral-500 dark:border-neutral-700">
+              <p className="rounded-2xl border border-dashed border-borde p-4 text-center text-sm text-grafito/50">
                 No hay mototaxis disponibles. Todas están alquiladas, vendidas o en mantenimiento.
               </p>
             )}
@@ -315,8 +311,8 @@ export default function NuevoContrato() {
                   className={cn(
                     "flex flex-col items-center gap-1 rounded-2xl border py-3.5 text-sm font-semibold transition-colors",
                     tipo === t.id
-                      ? "border-amarillo bg-amarillo/15 text-neutral-900 dark:text-amarillo"
-                      : "border-neutral-200 text-neutral-500 dark:border-neutral-800",
+                      ? "border-cobre bg-cobre/10 text-cobre"
+                      : "border-borde text-grafito/50",
                   )}
                 >
                   {t.icono}
@@ -328,7 +324,7 @@ export default function NuevoContrato() {
             {/* Montos */}
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2">
-                <label htmlFor="total" className="text-[11px] font-semibold uppercase tracking-widest text-neutral-400">
+                <label htmlFor="total" className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40">
                   Monto total del contrato (S/.)
                 </label>
                 <input
@@ -338,11 +334,11 @@ export default function NuevoContrato() {
                   min="0"
                   value={montoTotal}
                   onChange={(e) => setMontoTotal(e.target.value)}
-                  className="mt-1 w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-xl font-black tabular-nums dark:border-neutral-800 dark:bg-asfalto focus-visible:outline-2 focus-visible:outline-amarillo"
+                  className="mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-3 text-xl font-black tabular-nums text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
                 />
               </div>
               <div>
-                <label htmlFor="inicial" className="text-[11px] font-semibold uppercase tracking-widest text-neutral-400">
+                <label htmlFor="inicial" className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40">
                   Cuota inicial
                 </label>
                 <input
@@ -352,11 +348,11 @@ export default function NuevoContrato() {
                   min="0"
                   value={cuotaInicial}
                   onChange={(e) => setCuotaInicial(e.target.value)}
-                  className="mt-1 w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 font-bold tabular-nums dark:border-neutral-800 dark:bg-asfalto focus-visible:outline-2 focus-visible:outline-amarillo"
+                  className="mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-3 font-bold tabular-nums text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
                 />
               </div>
               <div>
-                <label htmlFor="cuota" className="text-[11px] font-semibold uppercase tracking-widest text-neutral-400">
+                <label htmlFor="cuota" className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40">
                   Monto por cuota
                 </label>
                 <input
@@ -366,14 +362,14 @@ export default function NuevoContrato() {
                   min="0"
                   value={montoCuota}
                   onChange={(e) => setMontoCuota(e.target.value)}
-                  className="mt-1 w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 font-bold tabular-nums dark:border-neutral-800 dark:bg-asfalto focus-visible:outline-2 focus-visible:outline-amarillo"
+                  className="mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-3 font-bold tabular-nums text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
                 />
               </div>
             </div>
 
             {/* Frecuencia */}
             <fieldset>
-              <legend className="text-[11px] font-semibold uppercase tracking-widest text-neutral-400">
+              <legend className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40">
                 Frecuencia de pago
               </legend>
               <div className="mt-1 grid grid-cols-4 gap-2">
@@ -386,8 +382,8 @@ export default function NuevoContrato() {
                     className={cn(
                       "rounded-xl border py-2.5 text-xs font-semibold transition-colors",
                       frecuencia === f.id
-                        ? "border-amarillo bg-amarillo/15 text-neutral-900 dark:text-amarillo"
-                        : "border-neutral-200 text-neutral-500 dark:border-neutral-800",
+                        ? "border-cobre bg-cobre/10 text-cobre"
+                        : "border-borde text-grafito/50",
                     )}
                   >
                     {f.label}
@@ -398,7 +394,7 @@ export default function NuevoContrato() {
 
             {/* Fecha de inicio */}
             <div>
-              <label htmlFor="inicio" className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-neutral-400">
+              <label htmlFor="inicio" className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-grafito/40">
                 <CalendarDays className="h-3.5 w-3.5" /> Fecha de inicio
               </label>
               <input
@@ -406,12 +402,12 @@ export default function NuevoContrato() {
                 type="date"
                 value={fechaInicio}
                 onChange={(e) => setFechaInicio(e.target.value)}
-                className="mt-1 w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 dark:border-neutral-800 dark:bg-asfalto focus-visible:outline-2 focus-visible:outline-amarillo"
+                className="mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-3 text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
               />
             </div>
 
             {condicionesValidas && (
-              <p className="rounded-xl bg-amarillo/10 p-3 text-sm">
+              <p className="rounded-xl bg-amarillo/10 p-3 text-sm text-grafito">
                 ≈ <span className="font-black">{numCuotasEstimadas}</span> cuotas de{" "}
                 <span className="font-black">{soles.format(nCuota)}</span> ({frecuencia})
                 {nInicial > 0 && (
@@ -425,7 +421,7 @@ export default function NuevoContrato() {
               type="button"
               disabled={!condicionesValidas}
               onClick={() => setPaso(4)}
-              className="w-full rounded-xl bg-amarillo py-4 font-bold text-asfalto active:scale-[0.98] disabled:opacity-40"
+              className="w-full rounded-xl bg-amarillo py-4 font-bold text-grafito active:scale-[0.98] disabled:opacity-40"
             >
               Revisar contrato
             </button>
@@ -435,7 +431,7 @@ export default function NuevoContrato() {
         {/* ══════════ PASO 4: CONFIRMAR ══════════ */}
         {paso === 4 && cliente && vehiculo && (
           <motion.section key="c4" {...slide} aria-label="Confirmar contrato" className="space-y-5">
-            <dl className="space-y-2 rounded-2xl border border-neutral-200 p-4 text-sm dark:border-neutral-800">
+            <dl className="space-y-2 rounded-2xl border border-borde bg-tarjeta p-4 text-sm shadow-card">
               {[
                 ["Cliente", cliente.nombre_completo],
                 ["Documento", cliente.numero_documento],
@@ -448,13 +444,13 @@ export default function NuevoContrato() {
                 ["Inicio", new Date(`${fechaInicio}T12:00:00`).toLocaleDateString("es-PE")],
               ].map(([k, v]) => (
                 <div key={k} className="flex justify-between gap-4">
-                  <dt className="text-neutral-500">{k}</dt>
-                  <dd className="text-right font-bold">{v}</dd>
+                  <dt className="text-grafito/50">{k}</dt>
+                  <dd className="text-right font-bold text-grafito">{v}</dd>
                 </div>
               ))}
             </dl>
 
-            <p className="text-xs text-neutral-500">
+            <p className="text-xs text-grafito/50">
               Al confirmar, la mototaxi pasará a estado{" "}
               <span className="font-bold">{tipo === "alquiler" ? "alquilado" : "vendido"}</span>
               {nInicial > 0 && " y la cuota inicial quedará registrada como primer pago"}.
@@ -472,7 +468,7 @@ export default function NuevoContrato() {
               type="button"
               onClick={confirmar}
               disabled={crear.isPending}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-amarillo py-4 font-bold text-asfalto active:scale-[0.98] disabled:opacity-60"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-amarillo py-4 font-bold text-grafito active:scale-[0.98] disabled:opacity-60"
             >
               {crear.isPending ? (
                 "Creando contrato…"

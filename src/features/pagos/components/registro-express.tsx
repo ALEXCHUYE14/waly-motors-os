@@ -9,7 +9,8 @@
  *   3. Foto del comprobante    (cámara nativa) + confirmar
  *
  * Si no hay señal, el cobro se encola y sincroniza solo
- * (ver useRegistrarPago).
+ * (ver useRegistrarPago). Tras confirmar, se puede generar y
+ * compartir por WhatsApp un comprobante en PDF (ver lib/comprobante).
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -27,9 +28,11 @@ import {
   Smartphone,
   Landmark,
   RotateCcw,
+  Share2,
 } from "lucide-react";
 import { supabase, soles, type MetodoPago } from "@/lib/supabase";
 import { useRegistrarPago } from "@/features/pagos/hooks/use-registrar-pago";
+import { generarComprobantePago, compartirComprobante, type ResultadoComprobante } from "@/lib/comprobante";
 import { cn, urlFirmadas } from "@/lib/utils";
 
 // ── Tipos ────────────────────────────────────────────────────
@@ -39,6 +42,7 @@ interface ResultadoBusqueda {
   nombre_completo: string;
   numero_documento: string;
   foto_perfil: string | null;
+  telefono: string | null;
   placa: string;
   modelo: string;
   monto_cuota: number;
@@ -52,6 +56,12 @@ const METODOS: { id: MetodoPago; label: string; icono: React.ReactNode }[] = [
   { id: "efectivo", label: "Efectivo", icono: <Banknote className="h-5 w-5" /> },
   { id: "transferencia", label: "Transf.", icono: <Landmark className="h-5 w-5" /> },
 ];
+
+const MENSAJE_COMPROBANTE: Record<ResultadoComprobante, string> = {
+  compartido: "Comprobante enviado.",
+  descargado: "Comprobante descargado — ábrelo en WhatsApp para adjuntarlo.",
+  cancelado: "Envío cancelado.",
+};
 
 // ── Hook: búsqueda con debounce ──────────────────────────────
 function useBusquedaContratos(termino: string) {
@@ -96,11 +106,7 @@ function Progreso({ paso }: { paso: 1 | 2 | 3 }) {
           className={cn(
             "h-1.5 rounded-full transition-all",
             n === paso ? "w-8 bg-amarillo" : "w-4",
-            n < paso
-              ? "bg-amarillo/60"
-              : n > paso
-                ? "bg-neutral-200 dark:bg-neutral-800"
-                : "",
+            n < paso ? "bg-amarillo/60" : n > paso ? "bg-borde" : "",
           )}
         />
       ))}
@@ -129,6 +135,10 @@ export default function RegistroExpress() {
   const [metodo, setMetodo] = useState<MetodoPago>("yape");
   const [evidencia, setEvidencia] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  // Comprobante PDF
+  const [enviandoComprobante, setEnviandoComprobante] = useState(false);
+  const [estadoComprobante, setEstadoComprobante] = useState<ResultadoComprobante | null>(null);
 
   const inputCamara = useRef<HTMLInputElement>(null);
   const busqueda = useBusquedaContratos(termino);
@@ -161,6 +171,35 @@ export default function RegistroExpress() {
     });
   }
 
+  async function enviarComprobante() {
+    if (!seleccion) return;
+    setEnviandoComprobante(true);
+    setEstadoComprobante(null);
+    try {
+      const doc = generarComprobantePago({
+        folio: `RE-${Date.now().toString(36).toUpperCase()}`,
+        fechaIso: new Date().toISOString(),
+        clienteNombre: seleccion.nombre_completo,
+        clienteDocumento: seleccion.numero_documento,
+        vehiculoPlaca: seleccion.placa,
+        vehiculoModelo: seleccion.modelo,
+        monto: montoNum,
+        metodo,
+      });
+      const primerNombre = seleccion.nombre_completo.split(" ")[0];
+      const mensaje = `Hola ${primerNombre}, aquí tu comprobante de pago de ${soles.format(montoNum)} — Waly Motors. ¡Gracias por tu preferencia!`;
+      const resultado = await compartirComprobante(
+        doc,
+        `comprobante-${seleccion.placa}.pdf`,
+        seleccion.telefono,
+        mensaje,
+      );
+      setEstadoComprobante(resultado);
+    } finally {
+      setEnviandoComprobante(false);
+    }
+  }
+
   function reiniciar() {
     registrar.reset();
     setPaso(1);
@@ -170,6 +209,7 @@ export default function RegistroExpress() {
     setMetodo("yape");
     setEvidencia(null);
     setPreviewUrl(null);
+    setEstadoComprobante(null);
   }
 
   // ── Pantalla de éxito / encolado offline ───────────────────
@@ -184,35 +224,50 @@ export default function RegistroExpress() {
         <span
           className={cn(
             "grid h-20 w-20 place-items-center rounded-3xl",
-            offline
-              ? "bg-amarillo/15 text-asfalto dark:text-amarillo"
-              : "bg-emerald-500/15 text-emerald-500",
+            offline ? "bg-amarillo/20 text-grafito" : "bg-emerald-500/15 text-emerald-500",
           )}
         >
           {offline ? <CloudOff className="h-10 w-10" /> : <Check className="h-10 w-10" strokeWidth={3} />}
         </span>
 
-        <h1 className="text-xl font-black uppercase tracking-tight">
+        <h1 className="text-xl font-black uppercase tracking-tight text-grafito">
           {offline ? "Cobro guardado sin señal" : "Pago registrado"}
         </h1>
-        <p className="text-sm text-neutral-500">
+        <p className="text-sm text-grafito/50">
           {offline
             ? `Se enviará automáticamente cuando vuelva la conexión. Pendientes en cola: ${registrar.pendientesEnCola}.`
             : `${soles.format(montoNum)} de ${seleccion?.nombre_completo} vía ${metodo}.`}
         </p>
 
+        {seleccion && (
+          <div className="w-full space-y-2">
+            <button
+              type="button"
+              onClick={() => void enviarComprobante()}
+              disabled={enviandoComprobante}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-cobre bg-cobre/10 py-3 text-sm font-bold text-cobre active:scale-[0.98] disabled:opacity-50"
+            >
+              <Share2 className="h-4 w-4" />
+              {enviandoComprobante ? "Generando comprobante…" : "Enviar comprobante"}
+            </button>
+            {estadoComprobante && (
+              <p className="text-xs text-grafito/50">{MENSAJE_COMPROBANTE[estadoComprobante]}</p>
+            )}
+          </div>
+        )}
+
         <div className="mt-2 flex w-full gap-2">
           <button
             type="button"
             onClick={reiniciar}
-            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-amarillo py-3.5 font-bold text-asfalto active:scale-[0.98]"
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-amarillo py-3.5 font-bold text-grafito active:scale-[0.98]"
           >
             <RotateCcw className="h-4 w-4" /> Nuevo cobro
           </button>
           <button
             type="button"
             onClick={() => router.push("/dashboard")}
-            className="flex-1 rounded-xl border border-neutral-200 py-3.5 text-sm font-semibold dark:border-neutral-700"
+            className="flex-1 rounded-xl border border-borde py-3.5 text-sm font-semibold text-grafito"
           >
             Ir al Dashboard
           </button>
@@ -231,12 +286,12 @@ export default function RegistroExpress() {
               type="button"
               onClick={() => setPaso((p) => (p - 1) as 1 | 2)}
               aria-label="Volver al paso anterior"
-              className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              className="rounded-lg p-1.5 text-grafito/40 hover:bg-fondo"
             >
               <ChevronLeft className="h-5 w-5" />
             </button>
           )}
-          <h1 className="text-lg font-black uppercase tracking-tight">
+          <h1 className="text-lg font-black uppercase tracking-tight text-grafito">
             Registro Express
           </h1>
         </div>
@@ -248,7 +303,7 @@ export default function RegistroExpress() {
         {paso === 1 && (
           <motion.section key="p1" {...slide} aria-label="Buscar cliente o placa">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-neutral-400" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-grafito/30" />
               <input
                 autoFocus
                 type="search"
@@ -257,17 +312,13 @@ export default function RegistroExpress() {
                 onChange={(e) => setTermino(e.target.value)}
                 placeholder="Nombre, DNI o placa…"
                 aria-label="Buscar cliente o placa"
-                className={cn(
-                  "w-full rounded-2xl border border-neutral-200 bg-white py-3.5 pl-11 pr-4 text-base",
-                  "dark:border-neutral-800 dark:bg-asfalto",
-                  "focus-visible:outline-2 focus-visible:outline-amarillo",
-                )}
+                className="w-full rounded-2xl border border-borde bg-tarjeta py-3.5 pl-11 pr-4 text-base text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
               />
             </div>
 
             <ul className="mt-3 space-y-2" aria-live="polite">
               {busqueda.isFetching && (
-                <li className="h-[68px] animate-pulse rounded-2xl bg-neutral-200/60 dark:bg-neutral-800/60" />
+                <li className="h-[68px] animate-pulse rounded-2xl bg-borde/60" />
               )}
 
               {busqueda.data?.map((r) => (
@@ -279,23 +330,20 @@ export default function RegistroExpress() {
                       setMonto(String(r.monto_cuota));
                       setPaso(2);
                     }}
-                    className={cn(
-                      "flex w-full items-center gap-3 rounded-2xl border p-3 text-left active:scale-[0.99]",
-                      "border-neutral-200 bg-white dark:border-neutral-800 dark:bg-asfalto",
-                    )}
+                    className="flex w-full items-center gap-3 rounded-2xl border border-borde bg-tarjeta p-3 text-left shadow-card active:scale-[0.99]"
                   >
-                    <span className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-neutral-200 dark:bg-neutral-800">
+                    <span className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-fondo">
                       {r.foto_perfil ? (
                         <Image src={r.foto_perfil} alt="" fill className="object-cover" sizes="44px" />
                       ) : (
-                        <span className="grid h-full w-full place-items-center font-black text-neutral-400">
+                        <span className="grid h-full w-full place-items-center font-black text-grafito/30">
                           {r.nombre_completo.charAt(0)}
                         </span>
                       )}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate font-semibold">{r.nombre_completo}</span>
-                      <span className="block text-xs text-neutral-500">
+                      <span className="block truncate font-semibold text-grafito">{r.nombre_completo}</span>
+                      <span className="block text-xs text-grafito/50">
                         <span className="font-mono font-bold">{r.placa}</span> · {r.modelo} ·{" "}
                         {soles.format(r.monto_cuota)} {r.frecuencia_pago}
                       </span>
@@ -310,7 +358,7 @@ export default function RegistroExpress() {
               ))}
 
               {busqueda.isSuccess && busqueda.data.length === 0 && (
-                <li className="rounded-2xl border border-dashed border-neutral-300 p-4 text-center text-sm text-neutral-500 dark:border-neutral-700">
+                <li className="rounded-2xl border border-dashed border-borde p-4 text-center text-sm text-grafito/50">
                   Sin resultados para «{termino}». Verifica la placa o el documento.
                 </li>
               )}
@@ -321,14 +369,14 @@ export default function RegistroExpress() {
         {/* ══════════ PASO 2: MONTO Y MÉTODO ══════════ */}
         {paso === 2 && seleccion && (
           <motion.section key="p2" {...slide} aria-label="Monto y método de pago" className="space-y-5">
-            <div className="rounded-2xl bg-amarillo/10 p-3 text-sm">
-              <span className="font-semibold">{seleccion.nombre_completo}</span>
-              <span className="text-neutral-500"> · placa </span>
-              <span className="font-mono font-bold">{seleccion.placa}</span>
+            <div className="rounded-2xl bg-cobre/10 p-3 text-sm">
+              <span className="font-semibold text-grafito">{seleccion.nombre_completo}</span>
+              <span className="text-grafito/50"> · placa </span>
+              <span className="font-mono font-bold text-grafito">{seleccion.placa}</span>
             </div>
 
             <div>
-              <label htmlFor="monto" className="text-[11px] font-semibold uppercase tracking-widest text-neutral-400">
+              <label htmlFor="monto" className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40">
                 Monto recibido (S/.)
               </label>
               <input
@@ -339,11 +387,7 @@ export default function RegistroExpress() {
                 min="0"
                 value={monto}
                 onChange={(e) => setMonto(e.target.value)}
-                className={cn(
-                  "mt-1 w-full rounded-2xl border border-neutral-200 bg-white px-4 py-4 text-3xl font-black tabular-nums",
-                  "dark:border-neutral-800 dark:bg-asfalto",
-                  "focus-visible:outline-2 focus-visible:outline-amarillo",
-                )}
+                className="mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-4 text-3xl font-black tabular-nums text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
               />
               <div className="mt-2 flex gap-2">
                 {[seleccion.monto_cuota, seleccion.monto_cuota * 2, seleccion.monto_cuota / 2].map((m) => (
@@ -351,7 +395,7 @@ export default function RegistroExpress() {
                     key={m}
                     type="button"
                     onClick={() => setMonto(m.toFixed(2))}
-                    className="rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-bold dark:border-neutral-700"
+                    className="rounded-lg border border-borde px-3 py-1.5 text-xs font-bold text-grafito"
                   >
                     {soles.format(m)}
                   </button>
@@ -360,7 +404,7 @@ export default function RegistroExpress() {
             </div>
 
             <fieldset>
-              <legend className="text-[11px] font-semibold uppercase tracking-widest text-neutral-400">
+              <legend className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40">
                 Método de pago
               </legend>
               <div className="mt-1 grid grid-cols-4 gap-2">
@@ -373,8 +417,8 @@ export default function RegistroExpress() {
                     className={cn(
                       "flex flex-col items-center gap-1 rounded-2xl border py-3 text-xs font-semibold transition-colors",
                       metodo === m.id
-                        ? "border-amarillo bg-amarillo/15 text-neutral-900 dark:text-amarillo"
-                        : "border-neutral-200 text-neutral-500 dark:border-neutral-800",
+                        ? "border-amarillo bg-amarillo/15 text-grafito"
+                        : "border-borde text-grafito/50",
                     )}
                   >
                     {m.icono}
@@ -388,7 +432,7 @@ export default function RegistroExpress() {
               type="button"
               disabled={!montoValido}
               onClick={() => setPaso(3)}
-              className="w-full rounded-xl bg-amarillo py-4 font-bold text-asfalto active:scale-[0.98] disabled:opacity-40"
+              className="w-full rounded-xl bg-amarillo py-4 font-bold text-grafito active:scale-[0.98] disabled:opacity-40"
             >
               Continuar
             </button>
@@ -413,9 +457,7 @@ export default function RegistroExpress() {
               onClick={() => inputCamara.current?.click()}
               className={cn(
                 "relative grid w-full place-items-center overflow-hidden rounded-2xl border-2 border-dashed",
-                previewUrl
-                  ? "aspect-[4/3] border-transparent"
-                  : "h-40 border-neutral-300 text-neutral-400 dark:border-neutral-700",
+                previewUrl ? "aspect-[4/3] border-transparent" : "h-40 border-borde text-grafito/40",
               )}
             >
               {previewUrl ? (
@@ -435,14 +477,14 @@ export default function RegistroExpress() {
               <button
                 type="button"
                 onClick={() => inputCamara.current?.click()}
-                className="w-full rounded-xl border border-neutral-200 py-2.5 text-sm font-semibold dark:border-neutral-700"
+                className="w-full rounded-xl border border-borde py-2.5 text-sm font-semibold text-grafito"
               >
                 Volver a tomar
               </button>
             )}
 
             {/* Resumen */}
-            <dl className="space-y-2 rounded-2xl border border-neutral-200 p-4 text-sm dark:border-neutral-800">
+            <dl className="space-y-2 rounded-2xl border border-borde bg-tarjeta p-4 text-sm shadow-card">
               {[
                 ["Cliente", seleccion.nombre_completo],
                 ["Placa", seleccion.placa],
@@ -450,8 +492,8 @@ export default function RegistroExpress() {
                 ["Método", METODOS.find((m) => m.id === metodo)?.label ?? metodo],
               ].map(([k, v]) => (
                 <div key={k} className="flex justify-between gap-4">
-                  <dt className="text-neutral-500">{k}</dt>
-                  <dd className="font-bold">{v}</dd>
+                  <dt className="text-grafito/50">{k}</dt>
+                  <dd className="font-bold text-grafito">{v}</dd>
                 </div>
               ))}
             </dl>
@@ -468,10 +510,7 @@ export default function RegistroExpress() {
               type="button"
               onClick={confirmarCobro}
               disabled={registrar.isPending}
-              className={cn(
-                "flex w-full items-center justify-center gap-2 rounded-xl py-4 font-bold",
-                "bg-amarillo text-asfalto active:scale-[0.98] disabled:opacity-60",
-              )}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-amarillo py-4 font-bold text-grafito active:scale-[0.98] disabled:opacity-60"
             >
               {registrar.isPending ? (
                 "Registrando…"

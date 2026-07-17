@@ -134,32 +134,32 @@ export function ListaClientes() {
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4 sm:p-6">
       <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-black uppercase tracking-tight">Clientes</h1>
+        <h1 className="text-2xl font-black uppercase tracking-tight text-grafito">Clientes</h1>
         <button
           type="button"
           onClick={() => router.push("/clientes/nuevo")}
-          className="flex items-center gap-1.5 rounded-xl bg-amarillo px-4 py-2.5 text-sm font-bold text-asfalto active:scale-[0.98]"
+          className="flex items-center gap-1.5 rounded-xl bg-cobre px-4 py-2.5 text-sm font-bold text-white active:scale-[0.98]"
         >
           <Plus className="h-4 w-4" strokeWidth={3} /> Registrar
         </button>
       </header>
 
       <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-neutral-400" />
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-grafito/30" />
         <input
           type="search"
           value={termino}
           onChange={(e) => setTermino(e.target.value)}
           placeholder="Buscar por nombre o documento…"
           aria-label="Buscar cliente"
-          className="w-full rounded-2xl border border-neutral-200 bg-white py-3.5 pl-11 pr-4 dark:border-neutral-800 dark:bg-asfalto focus-visible:outline-2 focus-visible:outline-amarillo"
+          className="w-full rounded-2xl border border-borde bg-tarjeta py-3.5 pl-11 pr-4 text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
         />
       </div>
 
       {clientes.isLoading ? (
         <div className="space-y-2">
           {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="h-[68px] animate-pulse rounded-2xl bg-neutral-200/60 dark:bg-neutral-800/60" />
+            <div key={i} className="h-[68px] animate-pulse rounded-2xl bg-borde/60" />
           ))}
         </div>
       ) : clientes.data && clientes.data.length > 0 ? (
@@ -169,18 +169,18 @@ export function ListaClientes() {
               <button
                 type="button"
                 onClick={() => router.push(`/clientes/${c.id}`)}
-                className="flex w-full items-center gap-3 rounded-2xl border border-neutral-200 bg-white p-3 text-left active:scale-[0.99] dark:border-neutral-800 dark:bg-asfalto"
+                className="flex w-full items-center gap-3 rounded-2xl border border-borde bg-tarjeta p-3 text-left shadow-card active:scale-[0.99]"
               >
-                <span className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-neutral-200 dark:bg-neutral-800">
+                <span className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-fondo">
                   {c.fotoFirmada ? (
                     <Image src={c.fotoFirmada} alt="" fill className="object-cover" sizes="44px" />
                   ) : (
-                    <UserRound className="m-auto h-full w-5 text-neutral-400" />
+                    <UserRound className="m-auto h-full w-5 text-grafito/30" />
                   )}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-semibold">{c.nombre_completo}</span>
-                  <span className="block text-xs text-neutral-500">
+                  <span className="block truncate font-semibold text-grafito">{c.nombre_completo}</span>
+                  <span className="block text-xs text-grafito/50">
                     {c.tipo_documento} <span className="font-mono">{c.numero_documento}</span>
                     {c.telefono && ` · ${c.telefono}`}
                   </span>
@@ -190,7 +190,7 @@ export function ListaClientes() {
           ))}
         </ul>
       ) : (
-        <p className="rounded-2xl border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-500 dark:border-neutral-700">
+        <p className="rounded-2xl border border-dashed border-borde p-6 text-center text-sm text-grafito/50">
           {termino ? `Sin resultados para «${termino}».` : "Aún no hay clientes registrados."}
         </p>
       )}
@@ -264,8 +264,8 @@ export function FormularioCliente({ id }: { id?: string }) {
   }
 
   const campo =
-    "mt-1 w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 dark:border-neutral-800 dark:bg-asfalto focus-visible:outline-2 focus-visible:outline-amarillo";
-  const etiqueta = "text-[11px] font-semibold uppercase tracking-widest text-neutral-400";
+    "mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-3 text-grafito focus-visible:outline-2 focus-visible:outline-amarillo";
+  const etiqueta = "text-[11px] font-semibold uppercase tracking-widest text-grafito/40";
   const fotoActual = preview ?? fotoFirmada;
 
   return (
@@ -274,7 +274,7 @@ export function FormularioCliente({ id }: { id?: string }) {
       animate={{ opacity: 1, y: 0 }}
       className="mx-auto max-w-md space-y-5 p-4 sm:p-6"
     >
-      <h1 className="text-lg font-black uppercase tracking-tight">
+      <h1 className="text-lg font-black uppercase tracking-tight text-grafito">
         {id ? "Editar cliente" : "Nuevo cliente"}
       </h1>
 
@@ -291,18 +291,18 @@ export function FormularioCliente({ id }: { id?: string }) {
       <button
         type="button"
         onClick={() => inputFoto.current?.click()}
-        className="relative mx-auto block h-28 w-28 overflow-hidden rounded-3xl border-2 border-dashed border-neutral-300 dark:border-neutral-700"
+        className="relative mx-auto block h-28 w-28 overflow-hidden rounded-3xl border-2 border-dashed border-borde bg-fondo"
       >
         {fotoActual ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={fotoActual} alt="Foto del cliente" className="h-full w-full object-cover" />
         ) : (
-          <span className="grid h-full w-full place-items-center text-neutral-400">
+          <span className="grid h-full w-full place-items-center text-grafito/30">
             <Camera className="h-7 w-7" />
           </span>
         )}
       </button>
-      <p className="text-center text-xs text-neutral-500">
+      <p className="text-center text-xs text-grafito/50">
         Toca para tomar la foto del cliente o de su {tipoDoc}.
       </p>
 
@@ -320,8 +320,8 @@ export function FormularioCliente({ id }: { id?: string }) {
                 className={cn(
                   "rounded-xl border py-2 text-xs font-bold",
                   tipoDoc === t
-                    ? "border-amarillo bg-amarillo/15"
-                    : "border-neutral-200 text-neutral-500 dark:border-neutral-800",
+                    ? "border-cobre bg-cobre/10 text-cobre"
+                    : "border-borde text-grafito/50",
                 )}
               >
                 {t}
@@ -360,7 +360,7 @@ export function FormularioCliente({ id }: { id?: string }) {
           )}
         </label>
         <div className="mt-1 flex">
-          <span className="flex items-center rounded-l-2xl border border-r-0 border-neutral-200 bg-neutral-100 px-3 font-mono text-sm font-bold dark:border-neutral-800 dark:bg-neutral-900">
+          <span className="flex items-center rounded-l-2xl border border-r-0 border-borde bg-fondo px-3 font-mono text-sm font-bold text-grafito">
             +51
           </span>
           <input
@@ -370,7 +370,7 @@ export function FormularioCliente({ id }: { id?: string }) {
             value={telefono}
             onChange={(e) => setTelefono(e.target.value.replace(/\D/g, ""))}
             placeholder="987654321"
-            className="w-full rounded-r-2xl border border-neutral-200 bg-white px-4 py-3 font-mono dark:border-neutral-800 dark:bg-asfalto focus-visible:outline-2 focus-visible:outline-amarillo"
+            className="w-full rounded-r-2xl border border-borde bg-tarjeta px-4 py-3 font-mono text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
           />
         </div>
       </div>
@@ -397,7 +397,7 @@ export function FormularioCliente({ id }: { id?: string }) {
         type="button"
         disabled={!valido || guardar.isPending}
         onClick={onGuardar}
-        className="flex w-full items-center justify-center gap-2 rounded-xl bg-amarillo py-4 font-bold text-asfalto active:scale-[0.98] disabled:opacity-40"
+        className="flex w-full items-center justify-center gap-2 rounded-xl bg-amarillo py-4 font-bold text-grafito active:scale-[0.98] disabled:opacity-40"
       >
         {guardar.isPending ? "Guardando…" : <><Check className="h-5 w-5" strokeWidth={3} /> Guardar cliente</>}
       </button>

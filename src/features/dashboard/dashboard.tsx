@@ -10,9 +10,19 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessageCircle, TriangleAlert, Wallet, Bike, X } from "lucide-react";
+import {
+  MessageCircle,
+  TriangleAlert,
+  Wallet,
+  Bike,
+  Wrench,
+  Package,
+  ChevronRight,
+  X,
+} from "lucide-react";
 import {
   supabase,
   soles,
@@ -20,7 +30,7 @@ import {
   type ClienteEnMora,
   type KpisDashboard,
 } from "@/lib/supabase";
-import { cn, urlFirmadas } from "@/lib/utils";
+import { cn, urlFirmadas, abrirWhatsApp } from "@/lib/utils";
 
 // ── Data hooks ───────────────────────────────────────────────
 function useKpis() {
@@ -70,15 +80,6 @@ function construirMensajeWhatsApp(c: ClienteEnMora): string {
   );
 }
 
-function abrirWhatsApp(telefono: string, mensaje: string): void {
-  const numero = telefono.replace(/\D/g, ""); // "+51987..." → "51987..."
-  window.open(
-    `https://wa.me/${numero}?text=${encodeURIComponent(mensaje)}`,
-    "_blank",
-    "noopener,noreferrer",
-  );
-}
-
 // ── KPI Card ─────────────────────────────────────────────────
 interface KpiCardProps {
   titulo: string;
@@ -93,12 +94,10 @@ function KpiCard({ titulo, valor, icono, alerta, cargando }: KpiCardProps) {
     <div
       className={cn(
         "rounded-2xl border p-4",
-        alerta
-          ? "border-oxido/30 bg-oxido/5"
-          : "border-neutral-200 bg-white dark:border-neutral-800 dark:bg-asfalto",
+        alerta ? "border-oxido/25 bg-oxido/5" : "border-borde bg-tarjeta shadow-card",
       )}
     >
-      <div className="flex items-center justify-between text-neutral-400">
+      <div className="flex items-center justify-between text-grafito/40">
         <span className="text-[11px] font-semibold uppercase tracking-widest">
           {titulo}
         </span>
@@ -107,7 +106,7 @@ function KpiCard({ titulo, valor, icono, alerta, cargando }: KpiCardProps) {
       <p
         className={cn(
           "mt-2 text-2xl font-black tabular-nums",
-          alerta ? "text-oxido" : "text-neutral-900 dark:text-white",
+          alerta ? "text-oxido" : "text-grafito",
         )}
       >
         {cargando ? "···" : valor}
@@ -131,7 +130,7 @@ function ModalWhatsApp({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[60] grid place-items-end bg-black/50 backdrop-blur-sm sm:place-items-center"
+      className="fixed inset-0 z-[60] grid place-items-end bg-grafito/40 backdrop-blur-sm sm:place-items-center"
       onClick={onCerrar}
       role="dialog"
       aria-modal="true"
@@ -143,14 +142,14 @@ function ModalWhatsApp({
         exit={{ y: 48 }}
         transition={{ type: "spring", stiffness: 320, damping: 30 }}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md rounded-t-3xl bg-white p-5 shadow-2xl dark:bg-asfalto sm:rounded-3xl"
+        className="w-full max-w-md rounded-t-3xl bg-tarjeta p-5 shadow-2xl sm:rounded-3xl"
       >
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="font-black uppercase tracking-wide">
+            <h2 className="font-black uppercase tracking-wide text-grafito">
               Notificar por WhatsApp
             </h2>
-            <p className="text-sm text-neutral-500">
+            <p className="text-sm text-grafito/50">
               {cliente.nombre_completo} · Placa {cliente.placa}
             </p>
           </div>
@@ -158,7 +157,7 @@ function ModalWhatsApp({
             type="button"
             onClick={onCerrar}
             aria-label="Cerrar"
-            className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+            className="rounded-lg p-1.5 text-grafito/40 hover:bg-fondo"
           >
             <X className="h-5 w-5" />
           </button>
@@ -169,8 +168,7 @@ function ModalWhatsApp({
           onChange={(e) => setMensaje(e.target.value)}
           rows={5}
           className={cn(
-            "mt-4 w-full resize-none rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-sm",
-            "dark:border-neutral-700 dark:bg-neutral-900",
+            "mt-4 w-full resize-none rounded-xl border border-borde bg-fondo p-3 text-sm text-grafito",
             "focus-visible:outline-2 focus-visible:outline-amarillo",
           )}
           aria-label="Mensaje a enviar"
@@ -180,7 +178,7 @@ function ModalWhatsApp({
           <button
             type="button"
             onClick={onCerrar}
-            className="flex-1 rounded-xl border border-neutral-200 py-3 text-sm font-semibold dark:border-neutral-700"
+            className="flex-1 rounded-xl border border-borde py-3 text-sm font-semibold text-grafito"
           >
             Cancelar
           </button>
@@ -218,8 +216,8 @@ function TarjetaMora({
   onNotificar: () => void;
 }) {
   return (
-    <li className="flex items-center gap-3 rounded-2xl border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-asfalto">
-      <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-neutral-200 dark:bg-neutral-800">
+    <li className="flex items-center gap-3 rounded-2xl border border-borde bg-tarjeta p-3 shadow-card">
+      <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-fondo">
         {cliente.foto_perfil ? (
           <Image
             src={cliente.foto_perfil}
@@ -229,15 +227,15 @@ function TarjetaMora({
             sizes="48px"
           />
         ) : (
-          <span className="grid h-full w-full place-items-center font-black text-neutral-400">
+          <span className="grid h-full w-full place-items-center font-black text-grafito/30">
             {cliente.nombre_completo.charAt(0)}
           </span>
         )}
       </div>
 
       <div className="min-w-0 flex-1">
-        <p className="truncate font-semibold">{cliente.nombre_completo}</p>
-        <p className="text-xs text-neutral-500">
+        <p className="truncate font-semibold text-grafito">{cliente.nombre_completo}</p>
+        <p className="text-xs text-grafito/50">
           Placa <span className="font-mono font-bold">{cliente.placa}</span> ·{" "}
           {soles.format(cliente.monto_cuota)}
         </p>
@@ -272,19 +270,21 @@ export default function Dashboard() {
     month: "long",
   }).format(new Date());
 
+  const enMantenimiento = kpis.data?.vehiculos_en_alerta_mantenimiento ?? 0;
+
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-4 sm:p-6">
       <header>
-        <p className="text-xs font-semibold uppercase tracking-widest text-neutral-400">
+        <p className="text-xs font-semibold uppercase tracking-widest text-grafito/40">
           {hoy}
         </p>
-        <h1 className="text-2xl font-black uppercase tracking-tight">
+        <h1 className="text-2xl font-black uppercase tracking-tight text-grafito">
           Control diario
         </h1>
       </header>
 
       {/* KPIs */}
-      <section aria-label="Indicadores del día" className="grid grid-cols-3 gap-3">
+      <section aria-label="Indicadores del día" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <KpiCard
           titulo="Caja hoy"
           valor={soles.format(kpis.data?.balance_hoy ?? 0)}
@@ -304,6 +304,13 @@ export default function Dashboard() {
           alerta={(kpis.data?.clientes_en_mora ?? 0) > 0}
           cargando={kpis.isLoading}
         />
+        <KpiCard
+          titulo="Mantenim."
+          valor={String(enMantenimiento)}
+          icono={<Wrench className="h-4 w-4" />}
+          alerta={enMantenimiento > 0}
+          cargando={kpis.isLoading}
+        />
       </section>
 
       {/* Acción Urgente */}
@@ -318,10 +325,7 @@ export default function Dashboard() {
         {mora.isLoading ? (
           <div className="space-y-3">
             {[0, 1, 2].map((i) => (
-              <div
-                key={i}
-                className="h-[74px] animate-pulse rounded-2xl bg-neutral-200/60 dark:bg-neutral-800/60"
-              />
+              <div key={i} className="h-[74px] animate-pulse rounded-2xl bg-borde/60" />
             ))}
           </div>
         ) : mora.isError ? (
@@ -339,10 +343,27 @@ export default function Dashboard() {
             ))}
           </ul>
         ) : (
-          <p className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+          <p className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-sm font-medium text-emerald-600">
             Todo al día. Ningún cliente tiene cuotas vencidas hoy. 🛺
           </p>
         )}
+      </section>
+
+      {/* Accesos secundarios (no viven en el bottom nav móvil) */}
+      <section aria-label="Otros módulos">
+        <Link
+          href="/repuestos"
+          className="flex items-center gap-3 rounded-2xl border border-borde bg-tarjeta p-4 shadow-card active:scale-[0.99]"
+        >
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-cobre/10 text-cobre">
+            <Package className="h-5 w-5" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold text-grafito">Inventario de repuestos</span>
+            <span className="block text-xs text-grafito/50">Stock, entradas y salidas del taller</span>
+          </span>
+          <ChevronRight className="h-4 w-4 shrink-0 text-grafito/30" />
+        </Link>
       </section>
 
       <AnimatePresence>

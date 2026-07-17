@@ -58,3 +58,13 @@ export async function subirImagen(
   if (error) throw error;
   return ruta;
 }
+
+/** Abre un chat de WhatsApp con un mensaje pre-redactado (API pública wa.me). */
+export function abrirWhatsApp(telefono: string, mensaje: string): void {
+  const numero = telefono.replace(/\D/g, ""); // "+51987..." → "51987..."
+  window.open(
+    `https://wa.me/${numero}?text=${encodeURIComponent(mensaje)}`,
+    "_blank",
+    "noopener,noreferrer",
+  );
+}

@@ -3,12 +3,14 @@
 @tailwind utilities;
 
 /* Colores de marca: definidos una sola vez en tailwind.config.ts
-   (amarillo / oxido / asfalto / noche / hueso / whatsapp).
-   Usar siempre las clases Tailwind (bg-amarillo, text-oxido, dark:bg-noche...),
-   nunca hex sueltos ni variables CSS duplicadas. */
+   (fondo / tarjeta / borde / grafito / cobre / amarillo / oxido / whatsapp).
+   Sistema claro único — no hay modo oscuro. Usar siempre las clases
+   Tailwind (bg-tarjeta, text-grafito, border-borde...), nunca hex sueltos
+   ni variables CSS duplicadas. */
 
 html {
   -webkit-tap-highlight-color: transparent;
+  background-color: #f9f9f7;
 }
 
 body {
@@ -19,7 +21,7 @@ body {
 @media (min-width: 1024px) {
   ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-thumb {
-    background: rgb(120 120 120 / 0.3);
+    background: rgb(32 31 29 / 0.15);
     border-radius: 4px;
   }
 }

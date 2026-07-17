@@ -11,6 +11,20 @@ import { supabase, type FrecuenciaPago, type EstadoVehiculo } from "@/lib/supaba
 import { urlFirmadas } from "@/lib/utils";
 
 // ── Tipos ────────────────────────────────────────────────────
+export type EstadoContrato = "activo" | "vencido" | "finalizado";
+
+export interface ContratoResumen {
+  id: string;
+  tipo: "alquiler" | "venta_credito";
+  monto_total: number;
+  monto_cuota: number;
+  frecuencia_pago: FrecuenciaPago;
+  estado: EstadoContrato;
+  fecha_inicio: string;
+  clientes: { nombre_completo: string; numero_documento: string } | null;
+  vehiculos: { placa: string; modelo: string } | null;
+}
+
 export interface VehiculoDisponible {
   id: string;
   placa: string;
@@ -42,6 +56,26 @@ export interface NuevoContrato {
   diaPagoPreferido?: number;
   fechaInicio: string; // ISO date
   fechaFin?: string;
+}
+
+// ── Listado de contratos (módulo Contratos) ──────────────────
+export function useContratos(filtroEstado?: EstadoContrato | "todos") {
+  return useQuery({
+    queryKey: ["contratos", filtroEstado ?? "todos"],
+    staleTime: 30_000,
+    queryFn: async (): Promise<ContratoResumen[]> => {
+      let q = supabase
+        .from("contratos")
+        .select(
+          "id, tipo, monto_total, monto_cuota, frecuencia_pago, estado, fecha_inicio, clientes(nombre_completo, numero_documento), vehiculos(placa, modelo)",
+        )
+        .order("created_at", { ascending: false });
+      if (filtroEstado && filtroEstado !== "todos") q = q.eq("estado", filtroEstado);
+      const { data, error } = await q;
+      if (error) throw error;
+      return (data ?? []) as unknown as ContratoResumen[];
+    },
+  });
 }
 
 // ── Vehículos disponibles ────────────────────────────────────
@@ -127,6 +161,7 @@ export function useCrearContrato() {
       void queryClient.invalidateQueries({ queryKey: ["vehiculos"] });
       void queryClient.invalidateQueries({ queryKey: ["kpis-dashboard"] });
       void queryClient.invalidateQueries({ queryKey: ["clientes-en-mora"] });
+      void queryClient.invalidateQueries({ queryKey: ["contratos"] });
     },
   });
 }
@@ -148,6 +183,7 @@ export function useFinalizarContrato() {
       void queryClient.invalidateQueries({ queryKey: ["vehiculos"] });
       void queryClient.invalidateQueries({ queryKey: ["kpis-dashboard"] });
       void queryClient.invalidateQueries({ queryKey: ["clientes-en-mora"] });
+      void queryClient.invalidateQueries({ queryKey: ["contratos"] });
     },
   });
 }

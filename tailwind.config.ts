@@ -1,7 +1,6 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
-  darkMode: "media",
   content: ["./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
@@ -9,12 +8,18 @@ const config: Config = {
         sans: ["var(--font-archivo)", "system-ui", "sans-serif"],
       },
       colors: {
-        amarillo: "#FFC400", // marca / acción primaria
+        // "Blanco Taller + Cobre" — sistema de diseño claro único (sin modo oscuro).
+        fondo: "#F9F9F7", // fondo de página
+        tarjeta: "#FFFFFF", // superficie de tarjetas / inputs
+        borde: "#EAE7E1", // bordes sutiles de tarjetas / inputs
+        grafito: "#201F1D", // texto principal — casi negro cálido, nunca gris plano
+        cobre: "#C97B3D", // acento de marca — nav activo, botones secundarios, iconografía
+        amarillo: "#FFC400", // reservado al CTA "Cobrar" y confirmaciones clave
         oxido: "#C4472B", // alerta / mora / peligro
-        asfalto: "#17181C", // superficie oscura (tarjetas, sidebar, inputs)
-        noche: "#101114", // fondo de página en modo oscuro (un nivel bajo asfalto)
-        hueso: "#F7F5F0", // superficie clara
         whatsapp: "#25D366", // verde oficial de marca — solo para el botón de WhatsApp
+      },
+      boxShadow: {
+        card: "0 1px 2px 0 rgb(32 31 29 / 0.04), 0 1px 8px -2px rgb(32 31 29 / 0.06)",
       },
     },
   },

@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Colores de marca: definidos una sola vez en tailwind.config.ts
+   (amarillo / oxido / asfalto / noche / hueso / whatsapp).
+   Usar siempre las clases Tailwind (bg-amarillo, text-oxido, dark:bg-noche...),
+   nunca hex sueltos ni variables CSS duplicadas. */
+
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: var(--font-archivo), system-ui, sans-serif;
+}
+
+/* Scrollbar discreto en desktop */
+@media (min-width: 1024px) {
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb {
+    background: rgb(120 120 120 / 0.3);
+    border-radius: 4px;
+  }
+}

@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase, type FrecuenciaPago, type EstadoVehiculo } from "@/lib/supabase";
+import { urlFirmadas } from "@/lib/utils";
 
 // ── Tipos ────────────────────────────────────────────────────
 export interface VehiculoDisponible {
@@ -50,7 +51,18 @@ export function useVehiculosDisponibles() {
     queryFn: async (): Promise<VehiculoDisponible[]> => {
       const { data, error } = await supabase.rpc("vehiculos_disponibles");
       if (error) throw error;
-      return data ?? [];
+
+      const vehiculos = (data ?? []) as VehiculoDisponible[];
+
+      // Solo la portada de cada vehículo, firmada en una sola llamada
+      // (bucket `vehiculos` es privado — no se puede exponer la ruta cruda).
+      const portadas = vehiculos.map((v) => v.fotos?.[0]).filter(Boolean) as string[];
+      const urlPorRuta = await urlFirmadas("vehiculos", portadas);
+
+      return vehiculos.map((v) => {
+        const url = v.fotos?.[0] ? urlPorRuta.get(v.fotos[0]) : undefined;
+        return { ...v, fotos: url ? [url] : [] };
+      });
     },
   });
 }
@@ -76,7 +88,15 @@ export function useBuscarClientes(termino: string) {
         .or(`nombre_completo.ilike.%${q}%,numero_documento.like.${q}%`)
         .limit(8);
       if (error) throw error;
-      return data ?? [];
+
+      // Bucket `clientes` es privado — firmar antes de exponer al UI.
+      const rutas = (data ?? []).map((c) => c.foto_perfil).filter(Boolean) as string[];
+      const urlPorRuta = await urlFirmadas("clientes", rutas);
+
+      return (data ?? []).map((c) => ({
+        ...c,
+        foto_perfil: c.foto_perfil ? urlPorRuta.get(c.foto_perfil) ?? null : null,
+      }));
     },
   });
 }

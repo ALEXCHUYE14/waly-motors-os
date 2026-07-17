@@ -1,5 +1,7 @@
 import { fileURLToPath } from "node:url";
 
+const root = fileURLToPath(new URL(".", import.meta.url));
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
@@ -7,8 +9,9 @@ const nextConfig = {
       { protocol: "https", hostname: "*.supabase.co", pathname: "/storage/**" },
     ],
   },
+  outputFileTracingRoot: root,
   turbopack: {
-    root: fileURLToPath(new URL(".", import.meta.url)),
+    root,
   },
   experimental: {
     optimizePackageImports: ["lucide-react", "framer-motion"],

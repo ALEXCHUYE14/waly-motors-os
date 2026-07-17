@@ -20,7 +20,7 @@ import {
   type ClienteEnMora,
   type KpisDashboard,
 } from "@/lib/supabase";
-import { cn } from "@/lib/utils";
+import { cn, urlFirmadas } from "@/lib/utils";
 
 // ── Data hooks ───────────────────────────────────────────────
 function useKpis() {
@@ -41,7 +41,17 @@ function useClientesEnMora() {
     queryFn: async (): Promise<ClienteEnMora[]> => {
       const { data, error } = await supabase.rpc("obtener_clientes_en_mora");
       if (error) throw error;
-      return data ?? [];
+
+      const clientes = (data ?? []) as ClienteEnMora[];
+
+      // Bucket `clientes` es privado — firmar antes de exponer al UI.
+      const rutas = clientes.map((c) => c.foto_perfil).filter(Boolean) as string[];
+      const urlPorRuta = await urlFirmadas("clientes", rutas);
+
+      return clientes.map((c) => ({
+        ...c,
+        foto_perfil: c.foto_perfil ? urlPorRuta.get(c.foto_perfil) ?? null : null,
+      }));
     },
     refetchInterval: 60_000,
   });

@@ -30,7 +30,7 @@ import {
 } from "lucide-react";
 import { supabase, soles, type MetodoPago } from "@/lib/supabase";
 import { useRegistrarPago } from "@/features/pagos/hooks/use-registrar-pago";
-import { cn } from "@/lib/utils";
+import { cn, urlFirmadas } from "@/lib/utils";
 
 // ── Tipos ────────────────────────────────────────────────────
 interface ResultadoBusqueda {
@@ -71,7 +71,17 @@ function useBusquedaContratos(termino: string) {
         p_termino: debounced.trim(),
       });
       if (error) throw error;
-      return data ?? [];
+
+      const resultados = (data ?? []) as ResultadoBusqueda[];
+
+      // Bucket `clientes` es privado — firmar antes de exponer al UI.
+      const rutas = resultados.map((r) => r.foto_perfil).filter(Boolean) as string[];
+      const urlPorRuta = await urlFirmadas("clientes", rutas);
+
+      return resultados.map((r) => ({
+        ...r,
+        foto_perfil: r.foto_perfil ? urlPorRuta.get(r.foto_perfil) ?? null : null,
+      }));
     },
   });
 }

@@ -100,15 +100,19 @@ export function generarContratoPdf(d: DatosContratoPdf): jsPDF {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9.5);
     for (const [etiqueta, valor] of filas) {
-      verificarEspacio(6);
+      // El alto real depende de cuántas líneas ocupa el valor (direcciones
+      // largas envuelven) — hay que calcularlo ANTES de verificar espacio,
+      // si no, el texto puede escribirse más allá del margen inferior.
+      const lineas = doc.splitTextToSize(valor, ancho - margenX * 2 - 45);
+      const altura = Math.max(6, lineas.length * 4.6);
+      verificarEspacio(altura);
       doc.setTextColor(...GRIS);
       doc.text(etiqueta, margenX, y);
       doc.setTextColor(...GRAFITO);
       doc.setFont("helvetica", "bold");
-      const lineas = doc.splitTextToSize(valor, ancho - margenX * 2 - 45);
       doc.text(lineas, margenX + 45, y);
       doc.setFont("helvetica", "normal");
-      y += Math.max(6, lineas.length * 4.6);
+      y += altura;
     }
     y += 3;
   }

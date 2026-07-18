@@ -139,15 +139,18 @@ export function generarComprobantePago(d: DatosComprobante): jsPDF {
     y += 6;
   }
 
-  // Pie
+  // Pie — si observaciones largas empujaron `y` más abajo de lo normal,
+  // el pie baja con el contenido en vez de superponerse (comprobante.ts
+  // no pagina: es un recibo de una sola cara en A5).
   const alturaPagina = doc.internal.pageSize.getHeight();
+  const lineaPie = Math.max(alturaPagina - 16, y + 6);
   doc.setDrawColor(...BORDE);
-  doc.line(margen, alturaPagina - 16, ancho - margen, alturaPagina - 16);
+  doc.line(margen, lineaPie, ancho - margen, lineaPie);
   doc.setTextColor(...GRIS);
   doc.setFontSize(8);
   doc.setFont("helvetica", "italic");
-  doc.text("Gracias por su preferencia — Waly Motors", margen, alturaPagina - 10);
-  doc.text("Comprobante generado digitalmente.", margen, alturaPagina - 5.5);
+  doc.text("Gracias por su preferencia — Waly Motors", margen, lineaPie + 6);
+  doc.text("Comprobante generado digitalmente.", margen, lineaPie + 10.5);
 
   return doc;
 }

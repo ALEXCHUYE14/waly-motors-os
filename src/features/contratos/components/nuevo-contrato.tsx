@@ -17,7 +17,7 @@
  * y lo sube al bucket privado `contratos` (ver useCrearContrato).
  */
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -102,6 +102,15 @@ export default function NuevoContrato() {
   const inputGarantias = useRef<HTMLInputElement>(null);
   const [firmaVacia, setFirmaVacia] = useState(true);
   const [documentosGarantia, setDocumentosGarantia] = useState<File[]>([]);
+
+  // El canvas de firma se desmonta al salir del paso 4 (pierde el trazo
+  // dibujado), pero sin esto `firmaVacia` quedaría en `false` si el
+  // asesor ya había firmado, retrocedió y volvió a entrar al paso: el
+  // botón de confirmar se vería habilitado aunque el canvas esté vacío
+  // de verdad, y "Confirmar y activar" no haría nada al presionarlo.
+  useEffect(() => {
+    if (paso === 4) setFirmaVacia(true);
+  }, [paso]);
 
   const clientes = useBuscarClientes(terminoCliente);
   const vehiculos = useVehiculosDisponibles();

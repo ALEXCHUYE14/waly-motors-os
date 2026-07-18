@@ -105,6 +105,15 @@ function useSincronizacionRealtime(): void {
       .on("postgres_changes", { event: "*", schema: "public", table: "pagos" }, () =>
         invalidar(["kpis-dashboard", "clientes-en-mora", "pagos-contrato", "resumen-contrato"]),
       )
+      .on("postgres_changes", { event: "*", schema: "public", table: "mantenimientos" }, () =>
+        invalidar(["mantenimientos", "vehiculos-alerta-mantenimiento", "kpis-dashboard", "vehiculos"]),
+      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "repuestos" }, () =>
+        invalidar(["repuestos", "repuesto"]),
+      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "movimientos_repuestos" }, () =>
+        invalidar(["repuestos", "repuesto", "movimientos-repuesto"]),
+      )
       .subscribe();
 
     return () => {

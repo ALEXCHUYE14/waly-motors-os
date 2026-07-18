@@ -147,16 +147,11 @@ export function useCrearContrato() {
 
   return useMutation({
     mutationFn: async (c: NuevoContrato) => {
-      // 1. Documentos de garantía: se suben ANTES de crear el contrato
-      // (todavía no existe contrato_id) usando al cliente + un sello de
-      // tiempo como carpeta, para evitar el problema del huevo-y-la-gallina.
-      const carpetaGarantias = `${c.cliente.id}-${Date.now()}`;
-      const rutasGarantia = await Promise.all(
-        c.documentosGarantia.map((f) => subirArchivo("garantias", carpetaGarantias, f)),
-      );
-
-      // 2. RPC atómica: bloquea el vehículo, valida disponibilidad y crea
-      // el contrato con firma y garantías ya incluidas.
+      // 1. RPC atómica primero: bloquea el vehículo, valida disponibilidad
+      // y crea el contrato (con la firma, que es solo texto). Los
+      // documentos de garantía se suben DESPUÉS —si el vehículo ya no
+      // está disponible y el RPC falla, no quedan archivos huérfanos en
+      // el bucket de un contrato que nunca llegó a existir.
       const { data, error } = await supabase.rpc("crear_contrato", {
         p_cliente_id: c.cliente.id,
         p_vehiculo_id: c.vehiculo.id,
@@ -169,11 +164,28 @@ export function useCrearContrato() {
         p_fecha_inicio: c.fechaInicio,
         p_fecha_fin: c.fechaFin ?? null,
         p_firma_base64: c.firmaBase64,
-        p_documentos_garantia: rutasGarantia,
       });
       if (error) throw error;
 
       const contrato = data as { id: string; created_at: string };
+
+      // 2. Documentos de garantía: ahora sí, con el contrato ya creado
+      // como carpeta real. Si la subida falla, el contrato queda creado
+      // igual — no se bloquea lo financiero por un artefacto secundario.
+      let rutasGarantia: string[] = [];
+      try {
+        rutasGarantia = await Promise.all(
+          c.documentosGarantia.map((f) => subirArchivo("garantias", contrato.id, f)),
+        );
+        if (rutasGarantia.length > 0) {
+          await supabase
+            .from("contratos")
+            .update({ documentos_garantia: rutasGarantia })
+            .eq("id", contrato.id);
+        }
+      } catch {
+        // Ver comentario arriba: no propagar el error de las garantías.
+      }
 
       // 3. Generar el PDF del contrato y subirlo al bucket `contratos`.
       // Si esto falla, el contrato igual quedó creado correctamente —

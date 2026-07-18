@@ -307,7 +307,16 @@ export function FormularioVehiculo({ id }: { id?: string }) {
       )}
 
       {id && tab === "mantenimiento" ? (
-        <TabMantenimiento vehiculoId={id} kilometrajeActual={Number(km) || 0} />
+        existente.data ? (
+          // Se usa el km recién cargado de la API, no el estado local `km`
+          // del formulario: ese solo se sincroniza via efecto después del
+          // primer render, y TabMantenimiento fija su valor inicial una
+          // sola vez al montar — si el asesor cambia a esta pestaña antes
+          // de que el efecto corra, quedaría con "0" para siempre.
+          <TabMantenimiento vehiculoId={id} kilometrajeActual={existente.data.kilometraje} />
+        ) : (
+          <div className="h-40 animate-pulse rounded-2xl bg-borde/60" />
+        )
       ) : (
         <>
           {/* Galería */}

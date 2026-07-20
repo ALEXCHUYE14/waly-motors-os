@@ -19,6 +19,7 @@
  */
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -228,28 +229,18 @@ function Sidebar({ pathname }: { pathname: string }) {
         "border-r border-borde bg-tarjeta",
       )}
     >
-      {/* Marca */}
-      <div className="flex items-center gap-3 px-4 py-5">
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-cobre font-black text-white">
-          W
+      {/* Marca — logo circular */}
+      <div className="flex items-center justify-center px-4 py-5">
+        <span className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full border border-borde bg-tarjeta">
+          <Image
+            src="/img/logo.png"
+            alt="Waly Motors"
+            fill
+            className="object-cover"
+            sizes="44px"
+            priority
+          />
         </span>
-        <AnimatePresence>
-          {!colapsado && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="leading-tight"
-            >
-              <p className="font-black uppercase tracking-wide text-grafito">
-                Waly Motors
-              </p>
-              <p className="text-[11px] font-medium uppercase tracking-widest text-grafito/40">
-                Sistema OS
-              </p>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
 
       {/* Navegación */}
@@ -326,14 +317,9 @@ function MobileTopBar() {
         "border-b border-borde bg-tarjeta/90 backdrop-blur-xl",
       )}
     >
-      <div className="flex items-center gap-2">
-        <span className="grid h-7 w-7 place-items-center rounded-lg bg-cobre text-xs font-black text-white">
-          W
-        </span>
-        <span className="text-sm font-black uppercase tracking-wide text-grafito">
-          Waly Motors
-        </span>
-      </div>
+      <span className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full border border-borde bg-tarjeta">
+        <Image src="/img/logo.png" alt="Waly Motors" fill className="object-cover" sizes="32px" />
+      </span>
       <button
         type="button"
         onClick={cerrarSesion}

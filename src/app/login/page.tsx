@@ -46,13 +46,16 @@ export default function LoginPage() {
       {/* ── Columna del formulario ── */}
       <div className="flex w-full flex-col items-center justify-center px-4 py-10 sm:px-6 lg:w-1/2 lg:px-12">
         <div className="w-full max-w-sm space-y-5">
-          <div className="flex justify-center">
+          {/* Logo: solo en móvil, justo arriba del formulario. En
+              escritorio el logo ya vive en el panel derecho — mostrarlo
+              aquí también sería redundante. */}
+          <div className="flex justify-center lg:hidden">
             <Image
               src="/img/logo.png"
               alt="Waldir Motors S.A.C."
               width={228}
               height={152}
-              className="h-auto w-48 object-contain"
+              className="h-auto w-40 object-contain"
               priority
             />
           </div>
@@ -140,7 +143,7 @@ export default function LoginPage() {
       </div>
 
       {/* ── Columna de imagen — oculta en móvil, visible desde lg ── */}
-      <div className="relative hidden w-1/2 bg-grafito lg:block">
+      <div className="relative hidden w-1/2 bg-white lg:block">
         <Image
           src="/img/logo.png"
           alt=""

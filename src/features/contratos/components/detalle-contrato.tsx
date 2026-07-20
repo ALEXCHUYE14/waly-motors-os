@@ -161,43 +161,49 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
     if (!r) return null;
     if (r.contrato_pdf_url) return r.contrato_pdf_url;
 
-    const numCuotas = r.monto_cuota > 0 ? Math.ceil((r.monto_total - r.cuota_inicial) / r.monto_cuota) : 0;
-    const pdf = generarContratoPdf({
-      contratoId: r.contrato_id,
-      tipo: r.tipo,
-      creadoEnIso: r.creado_en,
-      clienteNombre: r.cliente_nombre,
-      clienteTipoDocumento: r.cliente_tipo_documento,
-      clienteDocumento: r.cliente_documento,
-      clienteDireccion: r.cliente_direccion,
-      clienteTelefono: r.cliente_telefono,
-      vehiculoPlaca: r.vehiculo_placa,
-      vehiculoModelo: r.vehiculo_modelo,
-      vehiculoAnio: r.vehiculo_anio,
-      vehiculoChasis: r.vehiculo_chasis,
-      vehiculoKm: r.vehiculo_km,
-      montoTotal: r.monto_total,
-      cuotaInicial: r.cuota_inicial,
-      montoCuota: r.monto_cuota,
-      frecuenciaPago: r.frecuencia_pago,
-      numCuotasEstimadas: numCuotas,
-      fechaInicioIso: r.fecha_inicio,
-      fechaFinIso: r.fecha_fin,
-      firmaBase64: r.firma_base64,
-      firmaFechaIso: r.firma_fecha,
-      documentosGarantia: r.documentos_garantia,
-    });
+    try {
+      const numCuotas = r.monto_cuota > 0 ? Math.ceil((r.monto_total - r.cuota_inicial) / r.monto_cuota) : 0;
+      const pdf = generarContratoPdf({
+        contratoId: r.contrato_id,
+        tipo: r.tipo,
+        creadoEnIso: r.creado_en,
+        clienteNombre: r.cliente_nombre,
+        clienteTipoDocumento: r.cliente_tipo_documento,
+        clienteDocumento: r.cliente_documento,
+        clienteDireccion: r.cliente_direccion,
+        clienteTelefono: r.cliente_telefono,
+        vehiculoPlaca: r.vehiculo_placa,
+        vehiculoModelo: r.vehiculo_modelo,
+        vehiculoAnio: r.vehiculo_anio,
+        vehiculoChasis: r.vehiculo_chasis,
+        vehiculoKm: r.vehiculo_km,
+        montoTotal: r.monto_total,
+        cuotaInicial: r.cuota_inicial,
+        montoCuota: r.monto_cuota,
+        frecuenciaPago: r.frecuencia_pago,
+        numCuotasEstimadas: numCuotas,
+        fechaInicioIso: r.fecha_inicio,
+        fechaFinIso: r.fecha_fin,
+        firmaBase64: r.firma_base64,
+        firmaFechaIso: r.firma_fecha,
+        documentosGarantia: r.documentos_garantia,
+      });
 
-    const ruta = `${r.contrato_id}/contrato.pdf`;
-    const archivo = new File([pdf.output("blob")], "contrato.pdf", { type: "application/pdf" });
-    const { error } = await supabase.storage
-      .from("contratos")
-      .upload(ruta, archivo, { contentType: "application/pdf", upsert: true });
-    if (error) return null;
+      const ruta = `${r.contrato_id}/contrato.pdf`;
+      const archivo = new File([pdf.output("blob")], "contrato.pdf", { type: "application/pdf" });
+      const { error } = await supabase.storage
+        .from("contratos")
+        .upload(ruta, archivo, { contentType: "application/pdf", upsert: true });
+      if (error) return null;
 
-    await supabase.from("contratos").update({ contrato_pdf_url: ruta }).eq("id", r.contrato_id);
-    void resumen.refetch();
-    return ruta;
+      await supabase.from("contratos").update({ contrato_pdf_url: ruta }).eq("id", r.contrato_id);
+      void resumen.refetch();
+      return ruta;
+    } catch {
+      // Datos incompletos u otro error de generación: no rompe la pantalla,
+      // solo impide obtener una ruta (el botón mostrará el aviso genérico).
+      return null;
+    }
   }
 
   async function descargarContrato() {

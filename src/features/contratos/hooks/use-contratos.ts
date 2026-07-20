@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase, type FrecuenciaPago, type EstadoVehiculo } from "@/lib/supabase";
 import { urlFirmadas, subirArchivo } from "@/lib/utils";
-import { generarContratoPdf } from "@/lib/contrato-pdf";
+import { generarContratoPdf, nombreArchivoContrato } from "@/lib/contrato-pdf";
 
 // ── Tipos ────────────────────────────────────────────────────
 export type EstadoContrato = "activo" | "vencido" | "finalizado";
@@ -187,14 +187,15 @@ export function useCrearContrato() {
         // Ver comentario arriba: no propagar el error de las garantías.
       }
 
-      // 3. Generar el PDF del contrato y subirlo al bucket `contratos`.
-      // Si esto falla, el contrato igual quedó creado correctamente —
-      // DetalleContrato lo regenera on-demand la primera vez que se pida
-      // descargar/enviar (nunca se bloquea lo financiero por un artefacto
-      // secundario, mismo criterio que la cola de cobros offline).
+      // 3. Generar el PDF del contrato, disparar su descarga automática en
+      // este dispositivo y subirlo al bucket `contratos`. Si esto falla, el
+      // contrato igual quedó creado correctamente — DetalleContrato lo
+      // regenera on-demand la primera vez que se pida descargar/enviar
+      // (nunca se bloquea lo financiero por un artefacto secundario, mismo
+      // criterio que la cola de cobros offline).
       try {
         const numCuotas = Math.ceil((c.montoTotal - c.cuotaInicial) / c.montoCuota);
-        const pdf = generarContratoPdf({
+        const datosPdf = {
           contratoId: contrato.id,
           tipo: c.tipo,
           creadoEnIso: contrato.created_at,
@@ -218,7 +219,13 @@ export function useCrearContrato() {
           firmaBase64: c.firmaBase64,
           firmaFechaIso: contrato.created_at,
           documentosGarantia: rutasGarantia,
-        });
+        };
+        const pdf = generarContratoPdf(datosPdf);
+
+        // Descarga automática al finalizar el registro/firma del contrato:
+        // el cobrador se lleva la copia del cliente sin pasos adicionales.
+        pdf.save(nombreArchivoContrato(datosPdf));
+
         const rutaPdf = `${contrato.id}/contrato.pdf`;
         const archivoPdf = new File([pdf.output("blob")], "contrato.pdf", { type: "application/pdf" });
         const { error: errSubida } = await supabase.storage
@@ -228,7 +235,7 @@ export function useCrearContrato() {
           await supabase.from("contratos").update({ contrato_pdf_url: rutaPdf }).eq("id", contrato.id);
         }
       } catch {
-        // Ver comentario arriba: no propagar el error del PDF.
+        // Ver comentario arriba: no propagar el error del PDF ni el de su descarga.
       }
 
       return data;

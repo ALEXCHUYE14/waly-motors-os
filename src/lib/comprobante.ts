@@ -23,6 +23,25 @@ const fecha = new Intl.DateTimeFormat("es-PE", {
   minute: "2-digit",
 });
 
+// ── Logo del sistema (public/img/logo.png) ───────────────────
+// Se carga una sola vez y se reutiliza en cada comprobante — evita
+// refetch por recibo. Si falla (offline, archivo ausente, etc.) el
+// comprobante se genera igual, sin logo, nunca rompe la descarga/envío.
+let logoPromise: Promise<HTMLImageElement | null> | null = null;
+
+function cargarLogo(): Promise<HTMLImageElement | null> {
+  if (typeof window === "undefined") return Promise.resolve(null);
+  if (!logoPromise) {
+    logoPromise = new Promise((resolve) => {
+      const img = new window.Image();
+      img.onload = () => resolve(img.naturalWidth > 0 ? img : null);
+      img.onerror = () => resolve(null);
+      img.src = "/img/logo.png";
+    });
+  }
+  return logoPromise;
+}
+
 export interface DatosComprobante {
   folio: string;
   fechaIso: string; // fecha del pago, ISO
@@ -38,29 +57,45 @@ export interface DatosComprobante {
 }
 
 /** Dibuja un comprobante de pago limpio en A5 vertical y devuelve el documento. */
-export function generarComprobantePago(d: DatosComprobante): jsPDF {
+export async function generarComprobantePago(d: DatosComprobante): Promise<jsPDF> {
   const doc = new jsPDF({ unit: "mm", format: "a5" });
   const ancho = doc.internal.pageSize.getWidth();
   const margen = 12;
-  let y = 0;
+  let y = 6;
+
+  // Logo del sistema, centrado arriba de la franja de marca — mantiene su
+  // proporción real (el archivo no es un ícono cuadrado) para no verse
+  // deformado.
+  const logo = await cargarLogo();
+  if (logo) {
+    const logoAncho = 32;
+    const logoAlto = logoAncho * (logo.naturalHeight / logo.naturalWidth);
+    try {
+      doc.addImage(logo, "PNG", (ancho - logoAncho) / 2, y, logoAncho, logoAlto);
+      y += logoAlto + 4;
+    } catch {
+      // Si el logo no se puede insertar, el comprobante sigue sin él.
+    }
+  }
 
   // Franja de marca
+  const bandaY = y;
   doc.setFillColor(...COBRE);
-  doc.rect(0, 0, ancho, 26, "F");
+  doc.rect(0, bandaY, ancho, 26, "F");
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(16);
-  doc.text("WALY MOTORS", margen, 13);
+  doc.text("WALY MOTORS", margen, bandaY + 13);
   doc.setFontSize(9);
   doc.setFont("helvetica", "normal");
-  doc.text("Comprobante de pago", margen, 20);
+  doc.text("Comprobante de pago", margen, bandaY + 20);
 
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(9);
-  doc.text(`Folio ${d.folio}`, ancho - margen, 13, { align: "right" });
-  doc.text(fecha.format(new Date(d.fechaIso)), ancho - margen, 19, { align: "right" });
+  doc.text(`Folio ${d.folio}`, ancho - margen, bandaY + 13, { align: "right" });
+  doc.text(fecha.format(new Date(d.fechaIso)), ancho - margen, bandaY + 19, { align: "right" });
 
-  y = 38;
+  y = bandaY + 38;
 
   const seccion = (titulo: string, filas: [string, string][]) => {
     doc.setTextColor(...GRIS);

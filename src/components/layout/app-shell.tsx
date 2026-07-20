@@ -313,7 +313,12 @@ function MobileTopBar() {
   return (
     <header
       className={cn(
-        "sticky top-0 z-40 flex items-center justify-between px-4 py-3 lg:hidden",
+        "sticky top-0 z-40 flex items-center justify-between px-4 pb-3 lg:hidden",
+        // La barra vive dentro del área segura del notch/status bar del
+        // teléfono (sobre todo en PWA instalada, `display: standalone`):
+        // sin este padding el botón de cerrar sesión queda tapado por el
+        // reloj/batería del sistema y no se puede presionar.
+        "pt-[calc(env(safe-area-inset-top)+0.75rem)]",
         "border-b border-borde bg-tarjeta/90 backdrop-blur-xl",
       )}
     >

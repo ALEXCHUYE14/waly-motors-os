@@ -32,6 +32,7 @@ import {
   Paperclip,
   FileText,
   ImageIcon,
+  Download,
   X,
 } from "lucide-react";
 import { soles, type FrecuenciaPago } from "@/lib/supabase";
@@ -116,6 +117,20 @@ export default function NuevoContrato() {
   const vehiculos = useVehiculosDisponibles();
   const crear = useCrearContrato();
 
+  // Intento de apertura automática del PDF apenas queda listo el enlace
+  // firmado. Es "mejor esfuerzo": algunos navegadores bloquean una ventana
+  // nueva abierta fuera de un clic directo, por eso la pantalla de éxito
+  // también deja un botón "Descargar contrato" que abre el mismo enlace
+  // con un clic real. El `ref` evita reabrirlo en cada re-render.
+  const pdfAutoAbiertoRef = useRef(false);
+  useEffect(() => {
+    const url = crear.data?.contratoPdfUrl;
+    if (crear.isSuccess && url && !pdfAutoAbiertoRef.current) {
+      pdfAutoAbiertoRef.current = true;
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+  }, [crear.isSuccess, crear.data]);
+
   const nTotal = Number.parseFloat(montoTotal);
   const nInicial = Number.parseFloat(cuotaInicial) || 0;
   const nCuota = Number.parseFloat(montoCuota);
@@ -172,6 +187,7 @@ export default function NuevoContrato() {
 
   // ── Pantalla de éxito ──────────────────────────────────────
   if (crear.isSuccess) {
+    const pdfUrl = crear.data?.contratoPdfUrl ?? null;
     return (
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
@@ -187,10 +203,24 @@ export default function NuevoContrato() {
           <span className="font-mono font-bold">{vehiculo?.placa}</span>
           {nInicial > 0 && ` · cuota inicial de ${soles.format(nInicial)} registrada`}.
         </p>
+        {pdfUrl ? (
+          <button
+            type="button"
+            onClick={() => window.open(pdfUrl, "_blank", "noopener,noreferrer")}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-cobre bg-cobre/10 py-3.5 font-bold text-cobre active:scale-[0.98]"
+          >
+            <Download className="h-4 w-4" /> Descargar contrato
+          </button>
+        ) : (
+          <p className="rounded-xl bg-oxido/10 p-3 text-xs font-medium text-oxido">
+            El contrato se creó correctamente, pero el PDF no se pudo generar. Podrás descargarlo desde
+            el detalle del contrato.
+          </p>
+        )}
         <button
           type="button"
           onClick={() => router.push("/contratos")}
-          className="mt-2 w-full rounded-xl bg-amarillo py-3.5 font-bold text-grafito active:scale-[0.98]"
+          className="w-full rounded-xl bg-amarillo py-3.5 font-bold text-grafito active:scale-[0.98]"
         >
           Ver contratos
         </button>

@@ -8,8 +8,12 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase, type FrecuenciaPago, type EstadoVehiculo } from "@/lib/supabase";
-import { urlFirmadas, subirArchivo } from "@/lib/utils";
-import { generarContratoPdf, nombreArchivoContrato } from "@/lib/contrato-pdf";
+import { urlFirmadas, urlFirmada, subirArchivo } from "@/lib/utils";
+import { generarContratoPdf } from "@/lib/contrato-pdf";
+
+/** El enlace de descarga dura más que una sesión: el cobrador puede
+ *  querer reabrirlo minutos después de crear el contrato. */
+const SEGUNDOS_ENLACE_CONTRATO_NUEVO = 60 * 60 * 24 * 7;
 
 // ── Tipos ────────────────────────────────────────────────────
 export type EstadoContrato = "activo" | "vencido" | "finalizado";
@@ -62,6 +66,15 @@ export interface NuevoContrato {
   fechaFin?: string;
   firmaBase64: string;
   documentosGarantia: File[];
+}
+
+export interface ResultadoCrearContrato {
+  id: string;
+  created_at: string;
+  /** Enlace firmado del PDF recién generado — `null` si la generación o la
+   *  subida fallaron (el contrato ya quedó creado igual; el detalle del
+   *  contrato lo regenera on-demand). */
+  contratoPdfUrl: string | null;
 }
 
 // ── Listado de contratos (módulo Contratos) ──────────────────
@@ -187,15 +200,24 @@ export function useCrearContrato() {
         // Ver comentario arriba: no propagar el error de las garantías.
       }
 
-      // 3. Generar el PDF del contrato, disparar su descarga automática en
-      // este dispositivo y subirlo al bucket `contratos`. Si esto falla, el
-      // contrato igual quedó creado correctamente — DetalleContrato lo
-      // regenera on-demand la primera vez que se pida descargar/enviar
-      // (nunca se bloquea lo financiero por un artefacto secundario, mismo
-      // criterio que la cola de cobros offline).
+      // 3. Generar el PDF del contrato y subirlo al bucket `contratos`. Si
+      // esto falla, el contrato igual quedó creado correctamente —
+      // DetalleContrato lo regenera on-demand la primera vez que se pida
+      // descargar/enviar (nunca se bloquea lo financiero por un artefacto
+      // secundario, mismo criterio que la cola de cobros offline).
+      //
+      // Nota: la descarga NO se dispara aquí con `pdf.save()` (blob +
+      // <a download> simulado). En WebViews/PWA instaladas (`display:
+      // standalone`, el modo real de uso en calle) ese truco puede navegar
+      // a la URL blob en vez de descargar, dejando la pantalla en blanco y
+      // pareciendo "congelada" sin forma de volver. En su lugar devolvemos
+      // un enlace firmado y es la pantalla de éxito la que abre la
+      // descarga con un clic real del usuario — el mismo patrón, ya
+      // probado, que usa el botón "Descargar" en el detalle del contrato.
+      let contratoPdfUrl: string | null = null;
       try {
         const numCuotas = Math.ceil((c.montoTotal - c.cuotaInicial) / c.montoCuota);
-        const datosPdf = {
+        const pdf = generarContratoPdf({
           contratoId: contrato.id,
           tipo: c.tipo,
           creadoEnIso: contrato.created_at,
@@ -219,12 +241,7 @@ export function useCrearContrato() {
           firmaBase64: c.firmaBase64,
           firmaFechaIso: contrato.created_at,
           documentosGarantia: rutasGarantia,
-        };
-        const pdf = generarContratoPdf(datosPdf);
-
-        // Descarga automática al finalizar el registro/firma del contrato:
-        // el cobrador se lleva la copia del cliente sin pasos adicionales.
-        pdf.save(nombreArchivoContrato(datosPdf));
+        });
 
         const rutaPdf = `${contrato.id}/contrato.pdf`;
         const archivoPdf = new File([pdf.output("blob")], "contrato.pdf", { type: "application/pdf" });
@@ -233,12 +250,13 @@ export function useCrearContrato() {
           .upload(rutaPdf, archivoPdf, { contentType: "application/pdf" });
         if (!errSubida) {
           await supabase.from("contratos").update({ contrato_pdf_url: rutaPdf }).eq("id", contrato.id);
+          contratoPdfUrl = await urlFirmada("contratos", rutaPdf, SEGUNDOS_ENLACE_CONTRATO_NUEVO);
         }
       } catch {
-        // Ver comentario arriba: no propagar el error del PDF ni el de su descarga.
+        // Ver comentario arriba: no propagar el error del PDF ni el de su subida.
       }
 
-      return data;
+      return { ...contrato, contratoPdfUrl } satisfies ResultadoCrearContrato;
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["vehiculos-disponibles"] });

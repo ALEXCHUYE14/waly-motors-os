@@ -176,7 +176,7 @@ export default function RegistroExpress() {
     setEnviandoComprobante(true);
     setEstadoComprobante(null);
     try {
-      const doc = generarComprobantePago({
+      const doc = await generarComprobantePago({
         folio: `RE-${Date.now().toString(36).toUpperCase()}`,
         fechaIso: new Date().toISOString(),
         clienteNombre: seleccion.nombre_completo,

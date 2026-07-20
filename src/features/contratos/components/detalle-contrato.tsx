@@ -254,7 +254,7 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
   async function enviarComprobantePago(p: PagoContrato) {
     if (!r) return;
     setEstadoComprobante(null);
-    const doc = generarComprobantePago({
+    const doc = await generarComprobantePago({
       folio: p.id.slice(0, 8).toUpperCase(),
       fechaIso: p.fecha_pago,
       clienteNombre: r.cliente_nombre,

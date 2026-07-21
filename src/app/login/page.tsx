@@ -45,24 +45,29 @@ export default function LoginPage() {
     <div className="flex min-h-dvh bg-fondo">
       {/* ── Columna del formulario ── */}
       <div className="flex w-full flex-col items-center justify-center px-4 py-10 sm:px-6 lg:w-1/2 lg:px-12">
-        <div className="w-full max-w-sm space-y-5">
-          {/* Logo: solo en móvil, justo arriba del formulario. En
-              escritorio el logo ya vive en el panel derecho — mostrarlo
-              aquí también sería redundante. */}
-          <div className="flex justify-center lg:hidden">
+        <div className="w-full max-w-sm">
+          {/* Logo: solo en móvil, en una tarjeta que se monta sobre el
+              formulario (mismo efecto "portada + tarjeta superpuesta" que
+              en escritorio el logo vive en el panel derecho — mostrarlo
+              aquí también sería redundante).
+              El recuadro respeta la proporción real del archivo (3:2):
+              así la imagen toca los 4 bordes del recorte y el zoom
+              recorta el marco negro del archivo por igual en todo el
+              contorno, no solo en dos lados. */}
+          <div className="relative z-10 mx-auto -mb-10 aspect-[3/2] w-40 overflow-hidden rounded-2xl border border-borde bg-white shadow-card lg:hidden">
             <Image
               src="/img/logo.png"
               alt="Waldir Motors S.A.C."
-              width={228}
-              height={152}
-              className="h-auto w-40 object-contain"
+              fill
+              sizes="160px"
+              className="scale-110 object-cover"
               priority
             />
           </div>
 
           <form
             onSubmit={handleSubmit}
-            className="space-y-5 rounded-3xl border border-borde bg-tarjeta p-7 shadow-card"
+            className="space-y-5 rounded-3xl border border-borde bg-tarjeta p-7 pt-14 shadow-card lg:pt-7"
           >
             <div className="space-y-1 text-center">
               <h1 className="font-black uppercase tracking-wide text-grafito">
@@ -136,22 +141,30 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="text-center text-[11px] text-grafito/30">
+          <p className="mt-5 text-center text-[11px] text-grafito/30">
             © {new Date().getFullYear()} Waly Motors. Todos los derechos reservados.
           </p>
         </div>
       </div>
 
-      {/* ── Columna de imagen — oculta en móvil, visible desde lg ── */}
-      <div className="relative hidden w-1/2 bg-white lg:block">
-        <Image
-          src="/img/logo.png"
-          alt=""
-          fill
-          sizes="50vw"
-          className="object-contain p-12"
-          priority
-        />
+      {/* ── Columna de imagen — oculta en móvil, visible desde lg ──
+          El recuadro interior respeta la proporción real del archivo
+          (3:2) para que la imagen toque los 4 bordes del recorte: solo
+          así el zoom recorta el marco negro del archivo por igual en
+          todo el contorno (con `object-contain` en una caja más alta
+          que ancha, arriba/abajo quedan lejos del borde de recorte y
+          el marco nunca se llega a cortar ahí). */}
+      <div className="relative hidden w-1/2 items-center justify-center bg-white lg:flex">
+        <div className="relative aspect-[3/2] w-full max-w-lg overflow-hidden rounded-2xl">
+          <Image
+            src="/img/logo.png"
+            alt=""
+            fill
+            sizes="50vw"
+            className="scale-110 object-cover"
+            priority
+          />
+        </div>
       </div>
     </div>
   );

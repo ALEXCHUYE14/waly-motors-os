@@ -156,54 +156,55 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
 
   /** Devuelve la ruta interna del PDF del contrato, generándolo y
    *  subiéndolo la primera vez si todavía no existe (contratos creados
-   *  antes de esta función, o si la subida original falló). */
-  async function asegurarRutaContratoPdf(): Promise<string | null> {
-    if (!r) return null;
+   *  antes de esta función, o si la subida original falló). Lanza un
+   *  error con el motivo real (validación, storage, RLS, etc.) — nunca
+   *  lo esconde detrás de un aviso genérico, para poder diagnosticarlo. */
+  async function asegurarRutaContratoPdf(): Promise<string> {
+    if (!r) throw new Error("El contrato todavía no terminó de cargar. Espera un momento e intenta de nuevo.");
     if (r.contrato_pdf_url) return r.contrato_pdf_url;
 
-    try {
-      const numCuotas = r.monto_cuota > 0 ? Math.ceil((r.monto_total - r.cuota_inicial) / r.monto_cuota) : 0;
-      const pdf = generarContratoPdf({
-        contratoId: r.contrato_id,
-        tipo: r.tipo,
-        creadoEnIso: r.creado_en,
-        clienteNombre: r.cliente_nombre,
-        clienteTipoDocumento: r.cliente_tipo_documento,
-        clienteDocumento: r.cliente_documento,
-        clienteDireccion: r.cliente_direccion,
-        clienteTelefono: r.cliente_telefono,
-        vehiculoPlaca: r.vehiculo_placa,
-        vehiculoModelo: r.vehiculo_modelo,
-        vehiculoAnio: r.vehiculo_anio,
-        vehiculoChasis: r.vehiculo_chasis,
-        vehiculoKm: r.vehiculo_km,
-        montoTotal: r.monto_total,
-        cuotaInicial: r.cuota_inicial,
-        montoCuota: r.monto_cuota,
-        frecuenciaPago: r.frecuencia_pago,
-        numCuotasEstimadas: numCuotas,
-        fechaInicioIso: r.fecha_inicio,
-        fechaFinIso: r.fecha_fin,
-        firmaBase64: r.firma_base64,
-        firmaFechaIso: r.firma_fecha,
-        documentosGarantia: r.documentos_garantia,
-      });
+    const numCuotas = r.monto_cuota > 0 ? Math.ceil((r.monto_total - r.cuota_inicial) / r.monto_cuota) : 0;
+    const pdf = generarContratoPdf({
+      contratoId: r.contrato_id,
+      tipo: r.tipo,
+      creadoEnIso: r.creado_en,
+      clienteNombre: r.cliente_nombre,
+      clienteTipoDocumento: r.cliente_tipo_documento,
+      clienteDocumento: r.cliente_documento,
+      clienteDireccion: r.cliente_direccion,
+      clienteTelefono: r.cliente_telefono,
+      vehiculoPlaca: r.vehiculo_placa,
+      vehiculoModelo: r.vehiculo_modelo,
+      vehiculoAnio: r.vehiculo_anio,
+      vehiculoChasis: r.vehiculo_chasis,
+      vehiculoKm: r.vehiculo_km,
+      montoTotal: r.monto_total,
+      cuotaInicial: r.cuota_inicial,
+      montoCuota: r.monto_cuota,
+      frecuenciaPago: r.frecuencia_pago,
+      numCuotasEstimadas: numCuotas,
+      fechaInicioIso: r.fecha_inicio,
+      fechaFinIso: r.fecha_fin,
+      firmaBase64: r.firma_base64,
+      firmaFechaIso: r.firma_fecha,
+      documentosGarantia: r.documentos_garantia,
+    });
 
-      const ruta = `${r.contrato_id}/contrato.pdf`;
-      const archivo = new File([pdf.output("blob")], "contrato.pdf", { type: "application/pdf" });
-      const { error } = await supabase.storage
-        .from("contratos")
-        .upload(ruta, archivo, { contentType: "application/pdf", upsert: true });
-      if (error) return null;
+    const ruta = `${r.contrato_id}/contrato.pdf`;
+    const archivo = new File([pdf.output("blob")], "contrato.pdf", { type: "application/pdf" });
+    const { error } = await supabase.storage
+      .from("contratos")
+      .upload(ruta, archivo, { contentType: "application/pdf", upsert: true });
+    if (error) throw new Error(`No se pudo subir el PDF al almacenamiento: ${error.message}`);
 
-      await supabase.from("contratos").update({ contrato_pdf_url: ruta }).eq("id", r.contrato_id);
-      void resumen.refetch();
-      return ruta;
-    } catch {
-      // Datos incompletos u otro error de generación: no rompe la pantalla,
-      // solo impide obtener una ruta (el botón mostrará el aviso genérico).
-      return null;
-    }
+    const { error: errUpdate } = await supabase
+      .from("contratos")
+      .update({ contrato_pdf_url: ruta })
+      .eq("id", r.contrato_id);
+    if (errUpdate) throw new Error(`No se pudo guardar la ruta del PDF: ${errUpdate.message}`);
+
+    void resumen.refetch();
+    return ruta;
   }
 
   async function descargarContrato() {
@@ -211,12 +212,16 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
     setAvisoContrato(null);
     try {
       const ruta = await asegurarRutaContratoPdf();
-      if (!ruta) {
-        setAvisoContrato("No se pudo generar el contrato. Intenta de nuevo.");
+      const url = await urlFirmada("contratos", ruta, SEGUNDOS_ENLACE_CONTRATO);
+      if (!url) {
+        setAvisoContrato("No se pudo generar el enlace de descarga del contrato.");
         return;
       }
-      const url = await urlFirmada("contratos", ruta, SEGUNDOS_ENLACE_CONTRATO);
-      if (url) window.open(url, "_blank", "noopener,noreferrer");
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      setAvisoContrato(
+        err instanceof Error ? err.message : "No se pudo generar el contrato. Intenta de nuevo.",
+      );
     } finally {
       setGenerandoContrato(false);
     }
@@ -228,10 +233,6 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
     setAvisoContrato(null);
     try {
       const ruta = await asegurarRutaContratoPdf();
-      if (!ruta) {
-        setAvisoContrato("No se pudo generar el contrato. Intenta de nuevo.");
-        return;
-      }
       const url = await urlFirmada("contratos", ruta, SEGUNDOS_ENLACE_CONTRATO);
       if (!url) {
         setAvisoContrato("No se pudo generar el enlace del contrato.");
@@ -246,6 +247,10 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
         `Hola ${primerNombre}, te compartimos el contrato de tu mototaxi placa ${r.vehiculo_placa} con Waly Motors. ` +
         `Puedes revisarlo aquí (enlace válido por 7 días): ${url}`;
       abrirWhatsApp(r.cliente_telefono, mensaje);
+    } catch (err) {
+      setAvisoContrato(
+        err instanceof Error ? err.message : "No se pudo generar el contrato. Intenta de nuevo.",
+      );
     } finally {
       setGenerandoContrato(false);
     }

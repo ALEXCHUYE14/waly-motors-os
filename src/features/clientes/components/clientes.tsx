@@ -12,7 +12,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera, Check, Plus, Search, UserRound } from "lucide-react";
+import { Camera, Check, Plus, Search, Trash2, UserRound, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn, subirImagen, terminoBusquedaSeguro, urlFirmada, urlFirmadas } from "@/lib/utils";
 
@@ -26,6 +26,10 @@ export interface Cliente {
   direccion: string | null;
   referencia: string | null;
   foto_perfil: string | null;
+  // Ausente hasta que se aplique la migración 00012 (soft delete) — se
+  // trata como "activo" mientras no exista, para no romper el listado
+  // en instalaciones que aún no la corrieron.
+  activo?: boolean;
   fotoFirmada?: string | null;
 }
 
@@ -49,12 +53,18 @@ function useClientes(termino: string) {
       const { data, error } = await q;
       if (error) throw error;
 
+      // Se filtra en JS (no con `.eq("activo", true)` en la query) para que
+      // el listado no se rompa en instalaciones donde todavía no se aplicó
+      // la migración 00012: si la columna no existe, `activo` es `undefined`
+      // y el cliente se sigue mostrando con normalidad.
+      const visibles = (data ?? []).filter((c) => c.activo !== false);
+
       // UNA sola llamada HTTP para firmar las fotos de toda la lista
       // (antes: 1 llamada por cliente → N requests).
-      const rutas = (data ?? []).map((c) => c.foto_perfil).filter(Boolean) as string[];
+      const rutas = visibles.map((c) => c.foto_perfil).filter(Boolean) as string[];
       const urlPorRuta = await urlFirmadas("clientes", rutas);
 
-      return (data ?? []).map((c) => ({
+      return visibles.map((c) => ({
         ...c,
         fotoFirmada: c.foto_perfil ? urlPorRuta.get(c.foto_perfil) ?? null : null,
       }));
@@ -119,6 +129,23 @@ function useGuardarCliente(idExistente?: string) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["clientes"] });
       if (idExistente) void queryClient.invalidateQueries({ queryKey: ["cliente", idExistente] });
+    },
+  });
+}
+
+/** Elimina (soft delete) un cliente vía RPC atómica: el servidor bloquea
+ *  la operación si el cliente tiene algún contrato vigente sin finalizar
+ *  — nunca se borra la fila físicamente (ver migración 00012). */
+function useEliminarCliente() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.rpc("eliminar_cliente", { p_cliente_id: id });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["clientes"] });
     },
   });
 }
@@ -205,6 +232,7 @@ export function FormularioCliente({ id }: { id?: string }) {
   const router = useRouter();
   const existente = useCliente(id ?? "");
   const guardar = useGuardarCliente(id);
+  const eliminar = useEliminarCliente();
 
   const [tipoDoc, setTipoDoc] = useState<"DNI" | "RUC">("DNI");
   const [numDoc, setNumDoc] = useState("");
@@ -216,6 +244,7 @@ export function FormularioCliente({ id }: { id?: string }) {
   const [fotoFirmada, setFotoFirmada] = useState<string | null>(null);
   const [nuevaFoto, setNuevaFoto] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [confirmarEliminar, setConfirmarEliminar] = useState(false);
   const inputFoto = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -401,6 +430,61 @@ export function FormularioCliente({ id }: { id?: string }) {
       >
         {guardar.isPending ? "Guardando…" : <><Check className="h-5 w-5" strokeWidth={3} /> Guardar cliente</>}
       </button>
+
+      {id && (
+        <div className="space-y-2 border-t border-borde pt-5">
+          {!confirmarEliminar ? (
+            <button
+              type="button"
+              onClick={() => setConfirmarEliminar(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-oxido/40 py-3.5 text-sm font-bold text-oxido"
+            >
+              <Trash2 className="h-4 w-4" /> Eliminar cliente
+            </button>
+          ) : (
+            <div className="space-y-3 rounded-2xl border border-oxido/30 bg-oxido/5 p-4">
+              <p className="text-sm text-grafito">
+                No se puede eliminar si el cliente tiene un contrato vigente sin finalizar. Esta acción
+                no se puede deshacer desde la app.
+              </p>
+              {eliminar.isError && (
+                <p className="rounded-xl bg-oxido/10 p-3 text-sm font-medium text-oxido">
+                  {eliminar.error instanceof Error
+                    ? eliminar.error.message
+                    : "No se pudo eliminar el cliente. Intenta de nuevo."}
+                </p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmarEliminar(false)}
+                  className="flex-1 rounded-xl border border-borde py-3 text-sm font-semibold text-grafito"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={eliminar.isPending}
+                  onClick={() => {
+                    eliminar.mutate(id, {
+                      onSuccess: () => router.push("/clientes"),
+                    });
+                  }}
+                  className="flex-1 rounded-xl bg-oxido py-3 text-sm font-bold text-white disabled:opacity-60"
+                >
+                  {eliminar.isPending ? (
+                    "Eliminando…"
+                  ) : (
+                    <span className="flex items-center justify-center gap-1.5">
+                      <X className="h-4 w-4" /> Sí, eliminar
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </motion.div>
   );
 }

@@ -104,13 +104,27 @@ export default function NuevoContrato() {
   const [firmaVacia, setFirmaVacia] = useState(true);
   const [documentosGarantia, setDocumentosGarantia] = useState<File[]>([]);
 
+  // El <FirmaCanvas> solo se renderiza en el paso 4 — al avanzar al 5 se
+  // desmonta y React deja `firmaRef.current` en null. Por eso la firma se
+  // exporta a base64 UNA vez, al salir del paso 4 (botón "Revisar
+  // contrato"), y se guarda aquí: `confirmar()` en el paso 5 ya no puede
+  // leer el ref (siempre sería null) y antes simplemente no hacía nada al
+  // presionar el botón.
+  const [firmaBase64Capturada, setFirmaBase64Capturada] = useState<string | null>(null);
+  const [errorCapturaFirma, setErrorCapturaFirma] = useState(false);
+
   // El canvas de firma se desmonta al salir del paso 4 (pierde el trazo
   // dibujado), pero sin esto `firmaVacia` quedaría en `false` si el
   // asesor ya había firmado, retrocedió y volvió a entrar al paso: el
   // botón de confirmar se vería habilitado aunque el canvas esté vacío
-  // de verdad, y "Confirmar y activar" no haría nada al presionarlo.
+  // de verdad. También se limpia la firma ya capturada — hay que volver
+  // a firmar sobre el canvas nuevo, en blanco.
   useEffect(() => {
-    if (paso === 4) setFirmaVacia(true);
+    if (paso === 4) {
+      setFirmaVacia(true);
+      setFirmaBase64Capturada(null);
+      setErrorCapturaFirma(false);
+    }
   }, [paso]);
 
   const clientes = useBuscarClientes(terminoCliente);
@@ -169,8 +183,7 @@ export default function NuevoContrato() {
 
   function confirmar() {
     if (!cliente || !vehiculo || !condicionesValidas || !firmaGarantiasValidas) return;
-    const firmaBase64 = firmaRef.current?.exportarBase64();
-    if (!firmaBase64) return;
+    if (!firmaBase64Capturada) return;
     crear.mutate({
       cliente,
       vehiculo,
@@ -180,7 +193,7 @@ export default function NuevoContrato() {
       montoCuota: nCuota,
       frecuencia,
       fechaInicio,
-      firmaBase64,
+      firmaBase64: firmaBase64Capturada,
       documentosGarantia,
     });
   }
@@ -566,11 +579,28 @@ export default function NuevoContrato() {
                 Se necesita la firma del cliente y al menos un documento de garantía para continuar.
               </p>
             )}
+            {firmaGarantiasValidas && errorCapturaFirma && (
+              <p className="text-xs font-medium text-oxido">
+                No se pudo leer la firma del canvas. Borra y vuelve a firmar antes de continuar.
+              </p>
+            )}
 
             <button
               type="button"
               disabled={!firmaGarantiasValidas}
-              onClick={() => setPaso(5)}
+              onClick={() => {
+                // El canvas de firma solo existe en este paso — se exporta
+                // a base64 y se guarda AHORA, porque al avanzar al paso 5
+                // el componente se desmonta y el ref queda en null.
+                const firma = firmaRef.current?.exportarBase64();
+                if (!firma) {
+                  setErrorCapturaFirma(true);
+                  return;
+                }
+                setErrorCapturaFirma(false);
+                setFirmaBase64Capturada(firma);
+                setPaso(5);
+              }}
               className="w-full rounded-xl bg-amarillo py-4 font-bold text-grafito active:scale-[0.98] disabled:opacity-40"
             >
               Revisar contrato

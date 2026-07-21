@@ -1,5 +1,6 @@
 import { jsPDF } from "jspdf";
 import { soles, type FrecuenciaPago } from "@/lib/supabase";
+import { cargarLogoSistema, type AdjuntoImagen } from "@/lib/utils";
 
 // ── Colores de marca en RGB ──────────────────────────────────
 const COBRE: [number, number, number] = [201, 123, 61];
@@ -55,7 +56,7 @@ export interface DatosContratoPdf {
   fechaFinIso?: string | null;
   firmaBase64?: string | null;
   firmaFechaIso?: string | null;
-  documentosGarantia?: string[];
+  documentosGarantia?: AdjuntoImagen[];
 }
 
 /** Hash corto y determinístico (FNV-1a de 32 bits) — solo como marca de
@@ -118,8 +119,9 @@ export function nombreArchivoContrato(d: Pick<DatosContratoPdf, "vehiculoPlaca" 
   return `Contrato-${placa}-${cliente}.pdf`;
 }
 
-export function generarContratoPdf(d: DatosContratoPdf): jsPDF {
+export async function generarContratoPdf(d: DatosContratoPdf): Promise<jsPDF> {
   validarDatosContrato(d);
+  const logo = await cargarLogoSistema();
 
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const ancho = doc.internal.pageSize.getWidth();
@@ -151,7 +153,6 @@ export function generarContratoPdf(d: DatosContratoPdf): jsPDF {
   }
 
   function filaDatos(filas: [string, string][]) {
-    doc.setFont("helvetica", "normal");
     doc.setFontSize(9.5);
     for (const [etiqueta, valor] of filas) {
       // El alto real depende de cuántas líneas ocupa el valor (direcciones
@@ -160,12 +161,14 @@ export function generarContratoPdf(d: DatosContratoPdf): jsPDF {
       const lineas = doc.splitTextToSize(valor, ancho - margenX * 2 - 45);
       const altura = Math.max(6, lineas.length * 4.6);
       verificarEspacio(altura);
+      // Etiqueta en negrita; valor con el mismo tono/tipografía que el
+      // texto de las cláusulas (negro, sin negrita) — pedido explícito.
       doc.setTextColor(...GRIS);
+      doc.setFont("helvetica", "bold");
       doc.text(etiqueta, margenX, y);
       doc.setTextColor(...GRAFITO);
-      doc.setFont("helvetica", "bold");
-      doc.text(lineas, margenX + 45, y);
       doc.setFont("helvetica", "normal");
+      doc.text(lineas, margenX + 45, y);
       y += altura;
     }
     y += 3;
@@ -185,26 +188,41 @@ export function generarContratoPdf(d: DatosContratoPdf): jsPDF {
   }
 
   // ── Portada / membrete ──────────────────────────────────────
-  doc.setFillColor(...COBRE);
-  doc.rect(0, 0, ancho, 30, "F");
-  doc.setTextColor(255, 255, 255);
+  // Sin franja de color: el logo real del sistema reemplaza el título de
+  // texto, y todo el membrete va en negro y negrita (pedido explícito,
+  // en vez del bloque naranja con "WALY MOTORS" en blanco).
+  const logoAncho = 30;
+  const logoAlto = logo ? logoAncho * (logo.naturalHeight / logo.naturalWidth) : 0;
+  if (logo) {
+    try {
+      doc.addImage(logo, "PNG", margenX, 6, logoAncho, logoAlto);
+    } catch {
+      // Si el logo no carga, el membrete sigue sin él — nunca rompe el PDF.
+    }
+  }
+
+  const textoX = logo ? margenX + logoAncho + 8 : margenX;
+  const textoY = logo ? 6 + logoAlto / 2 : 12;
+
+  doc.setTextColor(...GRAFITO);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(18);
-  doc.text("WALY MOTORS", margenX, 14);
-  doc.setFontSize(11);
-  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10.5);
   doc.text(
     d.tipo === "alquiler"
       ? "Contrato privado de alquiler de vehículo menor (trimoto)"
       : "Contrato privado de alquiler-venta de vehículo menor (trimoto)",
-    margenX,
-    22,
+    textoX,
+    textoY,
   );
   doc.setFontSize(9);
-  doc.text(`N° ${d.contratoId.slice(0, 8).toUpperCase()}`, ancho - margenX, 14, { align: "right" });
-  doc.text(fecha.format(new Date(d.creadoEnIso)), ancho - margenX, 20, { align: "right" });
+  doc.text(`N° ${d.contratoId.slice(0, 8).toUpperCase()}`, ancho - margenX, 10, { align: "right" });
+  doc.text(fecha.format(new Date(d.creadoEnIso)), ancho - margenX, 16, { align: "right" });
 
-  y = 42;
+  y = Math.max(6 + logoAlto + 6, 24);
+  doc.setDrawColor(...GRAFITO);
+  doc.setLineWidth(0.4);
+  doc.line(margenX, y, ancho - margenX, y);
+  y += 8;
 
   // ── I. Partes ────────────────────────────────────────────────
   titulo("I. PARTES — EL ARRENDADOR Y EL ARRENDATARIO");
@@ -407,14 +425,50 @@ export function generarContratoPdf(d: DatosContratoPdf): jsPDF {
   doc.setFont("helvetica", "normal");
 
   // ── VI. Documentos de garantía adjuntos ──────────────────────
+  // Se listan todos por nombre y, además, las fotos (no los PDF sueltos,
+  // que jsPDF no puede fusionar) se incrustan como páginas propias —
+  // el asesor no tiene que abrir el bucket aparte para verlas.
   if (d.documentosGarantia && d.documentosGarantia.length > 0) {
     titulo("VI. DOCUMENTOS DE GARANTÍA ADJUNTOS");
+    doc.setFont("helvetica", "normal");
     doc.setFontSize(9.5);
     doc.setTextColor(...GRAFITO);
-    for (const ruta of d.documentosGarantia) {
+    for (const adj of d.documentosGarantia) {
       verificarEspacio(5);
-      doc.text(`• ${nombreLegible(ruta)}`, margenX, y);
+      doc.text(
+        `• ${nombreLegible(adj.ruta)}${adj.dataUrl ? "" : " (vista previa no disponible — ver adjunto original)"}`,
+        margenX,
+        y,
+      );
       y += 5;
+    }
+
+    for (const adj of d.documentosGarantia) {
+      if (!adj.dataUrl || adj.ancho <= 0 || adj.alto <= 0) continue;
+
+      nuevaPagina();
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(...GRAFITO);
+      doc.text(`Garantía adjunta — ${nombreLegible(adj.ruta)}`, margenX, y);
+      y += 8;
+
+      const anchoDisponible = ancho - margenX * 2;
+      const altoDisponible = alto - y - margenInferior;
+      // Escala uniforme (nunca deforma la foto): la menor entre "cabe a
+      // lo ancho" y "cabe a lo alto".
+      const escala = Math.min(anchoDisponible / adj.ancho, altoDisponible / adj.alto);
+      const wMM = adj.ancho * escala;
+      const hMM = adj.alto * escala;
+      const formato = adj.dataUrl.startsWith("data:image/png") ? "PNG" : "JPEG";
+      try {
+        doc.addImage(adj.dataUrl, formato, margenX, y, wMM, hMM);
+      } catch {
+        doc.setFont("helvetica", "italic");
+        doc.setFontSize(9);
+        doc.setTextColor(...GRIS);
+        doc.text("No se pudo incrustar esta imagen en el PDF.", margenX, y);
+      }
     }
   }
 

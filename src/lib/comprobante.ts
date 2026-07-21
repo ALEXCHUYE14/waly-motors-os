@@ -1,6 +1,6 @@
 import { jsPDF } from "jspdf";
 import { soles, type MetodoPago } from "@/lib/supabase";
-import { abrirWhatsApp } from "@/lib/utils";
+import { abrirWhatsApp, cargarLogoSistema } from "@/lib/utils";
 
 // ── Colores de marca en RGB (jsPDF no lee clases de Tailwind) ──
 const COBRE: [number, number, number] = [201, 123, 61]; // #C97B3D
@@ -22,25 +22,6 @@ const fecha = new Intl.DateTimeFormat("es-PE", {
   hour: "2-digit",
   minute: "2-digit",
 });
-
-// ── Logo del sistema (public/img/logo.png) ───────────────────
-// Se carga una sola vez y se reutiliza en cada comprobante — evita
-// refetch por recibo. Si falla (offline, archivo ausente, etc.) el
-// comprobante se genera igual, sin logo, nunca rompe la descarga/envío.
-let logoPromise: Promise<HTMLImageElement | null> | null = null;
-
-function cargarLogo(): Promise<HTMLImageElement | null> {
-  if (typeof window === "undefined") return Promise.resolve(null);
-  if (!logoPromise) {
-    logoPromise = new Promise((resolve) => {
-      const img = new window.Image();
-      img.onload = () => resolve(img.naturalWidth > 0 ? img : null);
-      img.onerror = () => resolve(null);
-      img.src = "/img/logo.png";
-    });
-  }
-  return logoPromise;
-}
 
 export interface DatosComprobante {
   folio: string;
@@ -66,7 +47,7 @@ export async function generarComprobantePago(d: DatosComprobante): Promise<jsPDF
   // Logo del sistema, centrado arriba de la franja de marca — mantiene su
   // proporción real (el archivo no es un ícono cuadrado) para no verse
   // deformado.
-  const logo = await cargarLogo();
+  const logo = await cargarLogoSistema();
   if (logo) {
     const logoAncho = 32;
     const logoAlto = logoAncho * (logo.naturalHeight / logo.naturalWidth);

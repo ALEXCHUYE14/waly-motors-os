@@ -8,7 +8,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase, type FrecuenciaPago, type EstadoVehiculo } from "@/lib/supabase";
-import { urlFirmadas, urlFirmada, subirArchivo, terminoBusquedaSeguro } from "@/lib/utils";
+import { urlFirmadas, urlFirmada, subirArchivo, terminoBusquedaSeguro, archivoLocalAAdjunto } from "@/lib/utils";
 import { generarContratoPdf } from "@/lib/contrato-pdf";
 
 /** El enlace de descarga dura más que una sesión: el cobrador puede
@@ -217,7 +217,12 @@ export function useCrearContrato() {
       let contratoPdfUrl: string | null = null;
       try {
         const numCuotas = Math.ceil((c.montoTotal - c.cuotaInicial) / c.montoCuota);
-        const pdf = generarContratoPdf({
+        // Los archivos ya están en memoria (recién elegidos) — se leen
+        // directo a data URL para incrustarlos, sin volver a bajarlos de
+        // Supabase (que además todavía podrían no estar subidos si el
+        // paso 2 de arriba falló).
+        const adjuntos = await Promise.all(c.documentosGarantia.map(archivoLocalAAdjunto));
+        const pdf = await generarContratoPdf({
           contratoId: contrato.id,
           tipo: c.tipo,
           creadoEnIso: contrato.created_at,
@@ -240,7 +245,7 @@ export function useCrearContrato() {
           fechaFinIso: c.fechaFin ?? null,
           firmaBase64: c.firmaBase64,
           firmaFechaIso: contrato.created_at,
-          documentosGarantia: rutasGarantia,
+          documentosGarantia: adjuntos,
         });
 
         const rutaPdf = `${contrato.id}/contrato.pdf`;

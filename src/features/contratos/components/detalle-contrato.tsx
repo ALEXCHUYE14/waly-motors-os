@@ -31,7 +31,7 @@ import { supabase, soles, type MetodoPago, type FrecuenciaPago } from "@/lib/sup
 import { useFinalizarContrato } from "@/features/contratos/hooks/use-contratos";
 import { generarComprobantePago, compartirComprobante, type ResultadoComprobante } from "@/lib/comprobante";
 import { generarContratoPdf } from "@/lib/contrato-pdf";
-import { cn, urlFirmada, abrirWhatsApp } from "@/lib/utils";
+import { cn, urlFirmada, abrirWhatsApp, cargarAdjuntoGarantia } from "@/lib/utils";
 
 // ── Tipos ────────────────────────────────────────────────────
 interface ResumenContrato {
@@ -164,7 +164,10 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
     if (r.contrato_pdf_url) return r.contrato_pdf_url;
 
     const numCuotas = r.monto_cuota > 0 ? Math.ceil((r.monto_total - r.cuota_inicial) / r.monto_cuota) : 0;
-    const pdf = generarContratoPdf({
+    // Estos ya están subidos a Supabase (contrato existente) — hay que
+    // bajarlos del bucket `garantias` para poder incrustarlos como imagen.
+    const adjuntos = await Promise.all(r.documentos_garantia.map(cargarAdjuntoGarantia));
+    const pdf = await generarContratoPdf({
       contratoId: r.contrato_id,
       tipo: r.tipo,
       creadoEnIso: r.creado_en,
@@ -187,7 +190,7 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
       fechaFinIso: r.fecha_fin,
       firmaBase64: r.firma_base64,
       firmaFechaIso: r.firma_fecha,
-      documentosGarantia: r.documentos_garantia,
+      documentosGarantia: adjuntos,
     });
 
     const ruta = `${r.contrato_id}/contrato.pdf`;

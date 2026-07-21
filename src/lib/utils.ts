@@ -88,3 +88,79 @@ export function abrirWhatsApp(telefono: string, mensaje: string): void {
     "noopener,noreferrer",
   );
 }
+
+// ── Logo del sistema (public/img/logo.png) ───────────────────
+// Se carga una sola vez y se reutiliza — usado para incrustarlo en
+// comprobantes y contratos en PDF. Si falla (offline, archivo ausente),
+// el documento se genera igual, sin logo, nunca rompe la descarga/envío.
+let logoSistemaPromise: Promise<HTMLImageElement | null> | null = null;
+
+export function cargarLogoSistema(): Promise<HTMLImageElement | null> {
+  if (typeof window === "undefined") return Promise.resolve(null);
+  if (!logoSistemaPromise) {
+    logoSistemaPromise = new Promise((resolve) => {
+      const img = new window.Image();
+      img.onload = () => resolve(img.naturalWidth > 0 ? img : null);
+      img.onerror = () => resolve(null);
+      img.src = "/img/logo.png";
+    });
+  }
+  return logoSistemaPromise;
+}
+
+// ── Adjuntos de garantía incrustables en el PDF del contrato ─
+export interface AdjuntoImagen {
+  ruta: string;
+  /** `null` si no es una imagen (ej. un PDF) o si la conversión falló —
+   *  el contrato solo lista el nombre en vez de romperse. */
+  dataUrl: string | null;
+  ancho: number;
+  alto: number;
+}
+
+const EXTENSIONES_IMAGEN = /\.(jpe?g|png|webp)$/i;
+
+async function blobAAdjunto(blob: Blob, ruta: string): Promise<AdjuntoImagen> {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error("No se pudo leer el archivo"));
+    reader.readAsDataURL(blob);
+  });
+  const { ancho, alto } = await new Promise<{ ancho: number; alto: number }>((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve({ ancho: img.naturalWidth, alto: img.naturalHeight });
+    img.onerror = () => resolve({ ancho: 0, alto: 0 });
+    img.src = dataUrl;
+  });
+  return { ruta, dataUrl, ancho, alto };
+}
+
+/** Descarga un documento de garantía ya subido al bucket `garantias` y lo
+ *  convierte a data URL con sus dimensiones reales, para incrustarlo como
+ *  imagen en el PDF del contrato sin deformarlo. Si no es imagen (ej. un
+ *  PDF) o la descarga falla, devuelve `dataUrl: null`. */
+export async function cargarAdjuntoGarantia(ruta: string): Promise<AdjuntoImagen> {
+  if (!EXTENSIONES_IMAGEN.test(ruta)) return { ruta, dataUrl: null, ancho: 0, alto: 0 };
+  try {
+    const url = await urlFirmada("garantias", ruta);
+    if (!url) return { ruta, dataUrl: null, ancho: 0, alto: 0 };
+    const res = await fetch(url);
+    if (!res.ok) return { ruta, dataUrl: null, ancho: 0, alto: 0 };
+    return await blobAAdjunto(await res.blob(), ruta);
+  } catch {
+    return { ruta, dataUrl: null, ancho: 0, alto: 0 };
+  }
+}
+
+/** Igual que `cargarAdjuntoGarantia`, pero para un archivo recién elegido
+ *  (todavía no subido) — se usa al crear el contrato, donde el `File` ya
+ *  está en memoria y no hace falta ir a buscarlo a Supabase. */
+export async function archivoLocalAAdjunto(file: File): Promise<AdjuntoImagen> {
+  if (!file.type.startsWith("image/")) return { ruta: file.name, dataUrl: null, ancho: 0, alto: 0 };
+  try {
+    return await blobAAdjunto(file, file.name);
+  } catch {
+    return { ruta: file.name, dataUrl: null, ancho: 0, alto: 0 };
+  }
+}

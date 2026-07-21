@@ -74,7 +74,7 @@ export default function LoginPage() {
                 Waly Motors OS
               </h1>
               <p className="text-xs text-grafito/50">
-                Ingresa con tu cuenta de empleado
+                Ingresa con tu cuenta de Administrador
               </p>
             </div>
 

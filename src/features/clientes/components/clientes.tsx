@@ -14,7 +14,7 @@ import { motion } from "framer-motion";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Camera, Check, Plus, Search, UserRound } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { cn, subirImagen, urlFirmada, urlFirmadas } from "@/lib/utils";
+import { cn, subirImagen, terminoBusquedaSeguro, urlFirmada, urlFirmadas } from "@/lib/utils";
 
 // ── Tipos y hooks ────────────────────────────────────────────
 export interface Cliente {
@@ -42,7 +42,7 @@ function useClientes(termino: string) {
     staleTime: 60_000,
     queryFn: async (): Promise<Cliente[]> => {
       let q = supabase.from("clientes").select("*").order("nombre_completo").limit(50);
-      const t = debounced.trim();
+      const t = terminoBusquedaSeguro(debounced);
       if (t.length >= 2) {
         q = q.or(`nombre_completo.ilike.%${t}%,numero_documento.like.${t}%`);
       }

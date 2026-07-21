@@ -6,6 +6,18 @@ export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs));
 }
 
+/**
+ * Sanea un término de búsqueda antes de interpolarlo en un filtro
+ * `.or("col.ilike.%term%,...")` de PostgREST. La coma separa condiciones
+ * y los paréntesis agrupan — un término de usuario que los traiga tal
+ * cual (ej. buscar "Pérez, José" o un nombre con paréntesis) rompe la
+ * sintaxis del filtro y la búsqueda falla con un 400 en vez de
+ * simplemente no encontrar resultados.
+ */
+export function terminoBusquedaSeguro(termino: string): string {
+  return termino.replace(/[,()]/g, "").trim();
+}
+
 export type BucketPrivado = "vehiculos" | "clientes" | "evidencias" | "contratos" | "garantias";
 
 /**

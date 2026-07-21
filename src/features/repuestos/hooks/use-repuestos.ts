@@ -11,6 +11,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { terminoBusquedaSeguro } from "@/lib/utils";
 
 // ── Tipos ────────────────────────────────────────────────────
 export interface Repuesto {
@@ -57,7 +58,7 @@ export function useRepuestos(termino: string) {
     staleTime: 30_000,
     queryFn: async (): Promise<Repuesto[]> => {
       let q = supabase.from("repuestos").select("*").order("nombre").limit(100);
-      const t = debounced.trim();
+      const t = terminoBusquedaSeguro(debounced);
       if (t.length >= 2) q = q.or(`nombre.ilike.%${t}%,codigo.ilike.%${t}%`);
       const { data, error } = await q;
       if (error) throw error;

@@ -72,6 +72,18 @@ export const FirmaCanvas = forwardRef<FirmaCanvasHandle, FirmaCanvasProps>(funct
         ctx.lineWidth = 2.2;
         ctx.strokeStyle = "#201F1D";
       }
+      // Cambiar width/height SIEMPRE borra el bitmap del canvas (lo hace
+      // el propio navegador). Si esto pasa después de que el cliente ya
+      // había firmado (ej. gira el teléfono a la mitad de la firma), el
+      // trazo visual desaparece pero `tieneTrazoRef` seguía en `true`:
+      // sin este reset, `exportarBase64` devolvía un PNG en blanco como
+      // si fuera una firma válida, y el contrato quedaba "firmado" con
+      // una imagen vacía sin que nadie lo notara.
+      if (tieneTrazoRef.current) {
+        tieneTrazoRef.current = false;
+        setVacio(true);
+        onCambio?.(true);
+      }
     }
 
     ajustarTamano();

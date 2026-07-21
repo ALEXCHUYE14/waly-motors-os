@@ -8,7 +8,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase, type FrecuenciaPago, type EstadoVehiculo } from "@/lib/supabase";
-import { urlFirmadas, urlFirmada, subirArchivo } from "@/lib/utils";
+import { urlFirmadas, urlFirmada, subirArchivo, terminoBusquedaSeguro } from "@/lib/utils";
 import { generarContratoPdf } from "@/lib/contrato-pdf";
 
 /** El enlace de descarga dura más que una sesión: el cobrador puede
@@ -134,7 +134,7 @@ export function useBuscarClientes(termino: string) {
     enabled: debounced.trim().length >= 2,
     staleTime: 30_000,
     queryFn: async (): Promise<ClienteBasico[]> => {
-      const q = debounced.trim();
+      const q = terminoBusquedaSeguro(debounced);
       const { data, error } = await supabase
         .from("clientes")
         .select("id, tipo_documento, nombre_completo, numero_documento, telefono, direccion, foto_perfil")

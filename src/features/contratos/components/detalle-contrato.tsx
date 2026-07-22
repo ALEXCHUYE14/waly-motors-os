@@ -28,7 +28,7 @@ import {
   X,
 } from "lucide-react";
 import { supabase, soles, type MetodoPago, type FrecuenciaPago } from "@/lib/supabase";
-import { useFinalizarContrato } from "@/features/contratos/hooks/use-contratos";
+import { useFinalizarContrato, type MotivoFinalizacion } from "@/features/contratos/hooks/use-contratos";
 import { generarComprobantePago, compartirComprobante, type ResultadoComprobante } from "@/lib/comprobante";
 import { generarContratoPdf } from "@/lib/contrato-pdf";
 import { cn, urlFirmada, abrirWhatsApp, cargarAdjuntoGarantia } from "@/lib/utils";
@@ -38,6 +38,7 @@ interface ResumenContrato {
   contrato_id: string;
   tipo: "alquiler" | "venta_credito";
   estado: "activo" | "vencido" | "finalizado";
+  motivo_finalizacion: MotivoFinalizacion | null;
   monto_total: number;
   cuota_inicial: number;
   monto_cuota: number;
@@ -148,6 +149,24 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
   const [avisoContrato, setAvisoContrato] = useState<string | null>(null);
 
   const r = resumen.data;
+
+  function confirmarFinalizacion(motivo: MotivoFinalizacion) {
+    setErrorFinalizar(null);
+    finalizar.mutate(
+      { contratoId, motivo },
+      {
+        onSuccess: () => {
+          setConfirmarFin(false);
+          void resumen.refetch();
+        },
+        onError: (err) => {
+          setErrorFinalizar(
+            err instanceof Error ? err.message : "No se pudo finalizar el contrato. Intenta de nuevo.",
+          );
+        },
+      },
+    );
+  }
 
   async function verEvidencia(ruta: string) {
     const url = await urlFirmada("evidencias", ruta);
@@ -304,7 +323,13 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
                   : "bg-grafito/10 text-grafito/60",
             )}
           >
-            {r.estado === "activo" ? "Activo" : r.estado === "vencido" ? "Vencido" : "Finalizado"}
+            {r.estado === "activo"
+              ? "Activo"
+              : r.estado === "vencido"
+                ? "Vencido"
+                : r.motivo_finalizacion === "incumplimiento"
+                  ? "Finalizado — incumplimiento"
+                  : "Finalizado"}
           </span>
         )}
       </header>
@@ -465,18 +490,55 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
             >
               <Flag className="h-4 w-4" /> Finalizar contrato
             </button>
+          ) : r.tipo === "venta_credito" && r.saldo > 0 ? (
+            // Venta a crédito sin terminar de pagar: hay que preguntar el
+            // motivo, porque el destino de la mototaxi depende de él — si
+            // no se pregunta, un incumplimiento (cliente se queda sin
+            // pagar y se le recupera el vehículo) queda indistinguible de
+            // una venta exitosa, y la moto se pierde como "vendida" para
+            // siempre aunque nunca se cobró.
+            <div className="space-y-3 rounded-2xl border border-oxido/30 bg-oxido/5 p-4">
+              <p className="text-sm text-grafito">
+                Es una venta a crédito con un saldo pendiente de{" "}
+                <span className="font-black">{soles.format(r.saldo)}</span>. Elige el motivo del cierre:
+              </p>
+              {errorFinalizar && (
+                <p className="rounded-xl bg-oxido/10 p-3 text-sm font-medium text-oxido">
+                  {errorFinalizar}
+                </p>
+              )}
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  disabled={finalizar.isPending}
+                  onClick={() => confirmarFinalizacion("completado")}
+                  className="w-full rounded-xl border border-borde py-3 text-sm font-semibold text-grafito disabled:opacity-60"
+                >
+                  El cliente completó el pago (queda vendida)
+                </button>
+                <button
+                  type="button"
+                  disabled={finalizar.isPending}
+                  onClick={() => confirmarFinalizacion("incumplimiento")}
+                  className="w-full rounded-xl bg-oxido py-3 text-sm font-bold text-white disabled:opacity-60"
+                >
+                  {finalizar.isPending ? "Finalizando…" : "Incumplimiento — recuperar mototaxi"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmarFin(false)}
+                  className="w-full rounded-xl border border-borde py-3 text-sm font-semibold text-grafito"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
           ) : (
             <div className="space-y-3 rounded-2xl border border-oxido/30 bg-oxido/5 p-4">
               <p className="text-sm text-grafito">
                 {r.tipo === "alquiler"
                   ? "Se cerrará el contrato y la mototaxi volverá a estado disponible."
                   : "Se cerrará el contrato de venta a crédito. La mototaxi permanecerá como vendida."}
-                {r.saldo > 0 && (
-                  <>
-                    {" "}Queda un saldo pendiente de{" "}
-                    <span className="font-black">{soles.format(r.saldo)}</span>.
-                  </>
-                )}
               </p>
               {errorFinalizar && (
                 <p className="rounded-xl bg-oxido/10 p-3 text-sm font-medium text-oxido">
@@ -494,22 +556,7 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
                 <button
                   type="button"
                   disabled={finalizar.isPending}
-                  onClick={() => {
-                    setErrorFinalizar(null);
-                    finalizar.mutate(contratoId, {
-                      onSuccess: () => {
-                        setConfirmarFin(false);
-                        void resumen.refetch();
-                      },
-                      onError: (err) => {
-                        setErrorFinalizar(
-                          err instanceof Error
-                            ? err.message
-                            : "No se pudo finalizar el contrato. Intenta de nuevo.",
-                        );
-                      },
-                    });
-                  }}
+                  onClick={() => confirmarFinalizacion("completado")}
                   className="flex-1 rounded-xl bg-oxido py-3 text-sm font-bold text-white disabled:opacity-60"
                 >
                   {finalizar.isPending ? "Finalizando…" : "Sí, finalizar"}

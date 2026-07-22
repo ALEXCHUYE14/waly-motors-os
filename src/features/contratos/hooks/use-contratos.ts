@@ -274,13 +274,27 @@ export function useCrearContrato() {
 }
 
 // ── Finalizar contrato ───────────────────────────────────────
+export type MotivoFinalizacion = "completado" | "incumplimiento";
+
+export interface DatosFinalizarContrato {
+  contratoId: string;
+  /** 'completado' (default): alquiler libera la mototaxi, venta a
+   *  crédito la deja vendida — igual que siempre. 'incumplimiento':
+   *  el cliente no pagó y se recuperó el vehículo — se libera SIEMPRE,
+   *  incluso si el contrato era de venta a crédito (si no, la mototaxi
+   *  quedaba marcada "vendida" para siempre aunque nunca se terminó de
+   *  pagar). Ver migración 00014. */
+  motivo?: MotivoFinalizacion;
+}
+
 export function useFinalizarContrato() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (contratoId: string) => {
+    mutationFn: async ({ contratoId, motivo }: DatosFinalizarContrato) => {
       const { data, error } = await supabase.rpc("finalizar_contrato", {
         p_contrato_id: contratoId,
+        p_motivo: motivo ?? "completado",
       });
       if (error) throw error;
       return data;

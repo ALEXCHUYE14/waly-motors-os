@@ -25,10 +25,15 @@ import {
   Download,
   MessageCircle,
   MoreVertical,
+  Trash2,
   X,
 } from "lucide-react";
 import { supabase, soles, type MetodoPago, type FrecuenciaPago } from "@/lib/supabase";
-import { useFinalizarContrato, type MotivoFinalizacion } from "@/features/contratos/hooks/use-contratos";
+import {
+  useFinalizarContrato,
+  useEliminarContrato,
+  type MotivoFinalizacion,
+} from "@/features/contratos/hooks/use-contratos";
 import { generarComprobantePago, compartirComprobante, type ResultadoComprobante } from "@/lib/comprobante";
 import { generarContratoPdf } from "@/lib/contrato-pdf";
 import { cn, urlFirmada, abrirWhatsApp, cargarAdjuntoGarantia } from "@/lib/utils";
@@ -139,10 +144,13 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
   const resumen = useResumen(contratoId);
   const pagos = usePagosContrato(contratoId);
   const finalizar = useFinalizarContrato();
+  const eliminar = useEliminarContrato();
 
   const [confirmarFin, setConfirmarFin] = useState(false);
+  const [confirmarEliminar, setConfirmarEliminar] = useState(false);
   const [evidenciaAbierta, setEvidenciaAbierta] = useState<string | null>(null);
   const [errorFinalizar, setErrorFinalizar] = useState<string | null>(null);
+  const [errorEliminar, setErrorEliminar] = useState<string | null>(null);
   const [generandoContrato, setGenerandoContrato] = useState(false);
   const [estadoComprobante, setEstadoComprobante] = useState<{ id: string; resultado: ResultadoComprobante } | null>(null);
   const [menuPago, setMenuPago] = useState<PagoContrato | null>(null);
@@ -166,6 +174,36 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
         },
       },
     );
+  }
+
+  function confirmarEliminarContrato() {
+    setErrorEliminar(null);
+    eliminar.mutate(contratoId, {
+      onSuccess: async ({ fotosEvidencia, documentosGarantia, contratoPdfUrl }) => {
+        // Best-effort: la fila ya se borró en la base de datos — si esto
+        // falla, solo quedan archivos huérfanos en Storage, nunca vuelve
+        // a bloquear ni a mostrar el contrato ya eliminado.
+        try {
+          if (fotosEvidencia.length > 0) {
+            await supabase.storage.from("evidencias").remove(fotosEvidencia);
+          }
+          if (documentosGarantia.length > 0) {
+            await supabase.storage.from("garantias").remove(documentosGarantia);
+          }
+          if (contratoPdfUrl) {
+            await supabase.storage.from("contratos").remove([contratoPdfUrl]);
+          }
+        } catch {
+          // No propagar: el contrato ya se eliminó correctamente.
+        }
+        router.push("/contratos");
+      },
+      onError: (err) => {
+        setErrorEliminar(
+          err instanceof Error ? err.message : "No se pudo eliminar el contrato. Intenta de nuevo.",
+        );
+      },
+    });
   }
 
   async function verEvidencia(ruta: string) {
@@ -571,6 +609,50 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
           >
             Registrar un cobro
           </button>
+        </section>
+      )}
+
+      {/* ── Eliminar contrato (solo ya finalizados — limpieza) ── */}
+      {r?.estado === "finalizado" && (
+        <section className="space-y-2">
+          {!confirmarEliminar ? (
+            <button
+              type="button"
+              onClick={() => setConfirmarEliminar(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-oxido/40 py-3.5 text-sm font-bold text-oxido"
+            >
+              <Trash2 className="h-4 w-4" /> Eliminar contrato
+            </button>
+          ) : (
+            <div className="space-y-3 rounded-2xl border border-oxido/30 bg-oxido/5 p-4">
+              <p className="text-sm text-grafito">
+                Se borrará el contrato y su historial de pagos por completo. Esta acción no se puede
+                deshacer.
+              </p>
+              {errorEliminar && (
+                <p className="rounded-xl bg-oxido/10 p-3 text-sm font-medium text-oxido">
+                  {errorEliminar}
+                </p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmarEliminar(false)}
+                  className="flex-1 rounded-xl border border-borde py-3 text-sm font-semibold text-grafito"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={eliminar.isPending}
+                  onClick={confirmarEliminarContrato}
+                  className="flex-1 rounded-xl bg-oxido py-3 text-sm font-bold text-white disabled:opacity-60"
+                >
+                  {eliminar.isPending ? "Eliminando…" : "Sí, eliminar"}
+                </button>
+              </div>
+            </div>
+          )}
         </section>
       )}
 

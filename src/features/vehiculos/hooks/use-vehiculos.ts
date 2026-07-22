@@ -148,6 +148,31 @@ export function useCambiarEstadoVehiculo() {
   });
 }
 
+// ── Eliminar vehículo (limpieza — solo sin contratos) ────────
+/** Borra un vehículo que NO tiene ningún contrato asociado (ni activo
+ *  ni finalizado) — la RPC bloquea el borrado si hay historial de
+ *  contratos; hay que eliminar esos contratos primero. Devuelve las
+ *  rutas de las fotos en Storage para que el llamador las borre
+ *  también: Postgres no puede tocar Storage. */
+export function useEliminarVehiculo() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (vehiculoId: string): Promise<string[]> => {
+      const { data, error } = await supabase.rpc("eliminar_vehiculo", {
+        p_vehiculo_id: vehiculoId,
+      });
+      if (error) throw error;
+      const fila = (Array.isArray(data) ? data[0] : data) as { fotos: string[] | null } | undefined;
+      return fila?.fotos ?? [];
+    },
+    onSuccess: () => {
+      for (const k of invalidaciones)
+        void queryClient.invalidateQueries({ queryKey: [k] });
+    },
+  });
+}
+
 // ── Mantenimiento ─────────────────────────────────────────────
 export type TipoMantenimiento = "preventivo" | "correctivo" | "llantas" | "motor" | "otro";
 

@@ -308,3 +308,40 @@ export function useFinalizarContrato() {
     },
   });
 }
+
+// ── Eliminar contrato (limpieza — solo finalizados) ──────────
+export interface EliminarContratoResultado {
+  fotosEvidencia: string[];
+  documentosGarantia: string[];
+  contratoPdfUrl: string | null;
+}
+
+/** Borra un contrato YA FINALIZADO y su historial de pagos — la RPC
+ *  bloquea el borrado de cualquier contrato activo o vencido (dinero
+ *  pendiente de cobro). Devuelve las rutas de Storage asociadas
+ *  (evidencias de pago, documentos de garantía, PDF del contrato) para
+ *  que el llamador las borre también: Postgres no puede tocar Storage. */
+export function useEliminarContrato() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (contratoId: string): Promise<EliminarContratoResultado> => {
+      const { data, error } = await supabase.rpc("eliminar_contrato", {
+        p_contrato_id: contratoId,
+      });
+      if (error) throw error;
+      const fila = (Array.isArray(data) ? data[0] : data) as
+        | { fotos_evidencia: string[] | null; documentos_garantia: string[] | null; contrato_pdf_url: string | null }
+        | undefined;
+      return {
+        fotosEvidencia: fila?.fotos_evidencia ?? [],
+        documentosGarantia: fila?.documentos_garantia ?? [],
+        contratoPdfUrl: fila?.contrato_pdf_url ?? null,
+      };
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["contratos"] });
+      void queryClient.invalidateQueries({ queryKey: ["kpis-dashboard"] });
+    },
+  });
+}

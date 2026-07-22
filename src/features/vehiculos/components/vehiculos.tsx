@@ -11,13 +11,14 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Bike, Camera, Check, Plus, Trash2, Wrench } from "lucide-react";
-import { soles, type EstadoVehiculo } from "@/lib/supabase";
+import { supabase, soles, type EstadoVehiculo } from "@/lib/supabase";
 import {
   useVehiculos,
   useVehiculo,
   useGuardarVehiculo,
   useCambiarEstadoVehiculo,
   useVehiculosAlertaMantenimiento,
+  useEliminarVehiculo,
   type Vehiculo,
 } from "@/features/vehiculos/hooks/use-vehiculos";
 import { TabMantenimiento } from "@/features/vehiculos/components/mantenimiento";
@@ -194,6 +195,7 @@ export function FormularioVehiculo({ id }: { id?: string }) {
   const router = useRouter();
   const existente = useVehiculo(id ?? "");
   const guardar = useGuardarVehiculo(id);
+  const eliminar = useEliminarVehiculo();
 
   const [tab, setTab] = useState<"datos" | "mantenimiento">("datos");
   const [placa, setPlaca] = useState("");
@@ -207,7 +209,32 @@ export function FormularioVehiculo({ id }: { id?: string }) {
   const [fotosFirmadas, setFotosFirmadas] = useState<string[]>([]);
   const [nuevasFotos, setNuevasFotos] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
+  const [confirmarEliminar, setConfirmarEliminar] = useState(false);
+  const [errorEliminar, setErrorEliminar] = useState<string | null>(null);
   const inputFotos = useRef<HTMLInputElement>(null);
+
+  function confirmarEliminarVehiculo() {
+    if (!id) return;
+    setErrorEliminar(null);
+    eliminar.mutate(id, {
+      onSuccess: async (fotos) => {
+        // Best-effort: el vehículo ya se borró en la base de datos — si
+        // esto falla, solo quedan fotos huérfanas en Storage, nunca
+        // vuelve a bloquear ni a mostrar el vehículo ya eliminado.
+        try {
+          if (fotos.length > 0) await supabase.storage.from("vehiculos").remove(fotos);
+        } catch {
+          // No propagar: el vehículo ya se eliminó correctamente.
+        }
+        router.push("/vehiculos");
+      },
+      onError: (err) => {
+        setErrorEliminar(
+          err instanceof Error ? err.message : "No se pudo eliminar el vehículo. Intenta de nuevo.",
+        );
+      },
+    });
+  }
 
   // Precargar en edición
   useEffect(() => {
@@ -395,6 +422,49 @@ export function FormularioVehiculo({ id }: { id?: string }) {
           >
             {guardar.isPending ? "Guardando…" : <><Check className="h-5 w-5" strokeWidth={3} /> Guardar mototaxi</>}
           </button>
+
+          {id && (
+            <div className="space-y-2 border-t border-borde pt-5">
+              {!confirmarEliminar ? (
+                <button
+                  type="button"
+                  onClick={() => setConfirmarEliminar(true)}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-oxido/40 py-3.5 text-sm font-bold text-oxido"
+                >
+                  <Trash2 className="h-4 w-4" /> Eliminar vehículo
+                </button>
+              ) : (
+                <div className="space-y-3 rounded-2xl border border-oxido/30 bg-oxido/5 p-4">
+                  <p className="text-sm text-grafito">
+                    Solo se puede eliminar si no tiene ningún contrato asociado (ni activo ni
+                    finalizado). Esta acción no se puede deshacer.
+                  </p>
+                  {errorEliminar && (
+                    <p className="rounded-xl bg-oxido/10 p-3 text-sm font-medium text-oxido">
+                      {errorEliminar}
+                    </p>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmarEliminar(false)}
+                      className="flex-1 rounded-xl border border-borde py-3 text-sm font-semibold text-grafito"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      disabled={eliminar.isPending}
+                      onClick={confirmarEliminarVehiculo}
+                      className="flex-1 rounded-xl bg-oxido py-3 text-sm font-bold text-white disabled:opacity-60"
+                    >
+                      {eliminar.isPending ? "Eliminando…" : "Sí, eliminar"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </>
       )}
     </motion.div>

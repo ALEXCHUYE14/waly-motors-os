@@ -36,7 +36,7 @@ import {
 } from "@/features/contratos/hooks/use-contratos";
 import { generarComprobantePago, compartirComprobante, type ResultadoComprobante } from "@/lib/comprobante";
 import { generarContratoPdf } from "@/lib/contrato-pdf";
-import { cn, urlFirmada, abrirWhatsApp, cargarAdjuntoGarantia } from "@/lib/utils";
+import { cn, urlFirmada, abrirWhatsApp, cargarAdjuntoGarantia, mensajeError } from "@/lib/utils";
 
 // ── Tipos ────────────────────────────────────────────────────
 interface ResumenContrato {
@@ -168,9 +168,7 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
           void resumen.refetch();
         },
         onError: (err) => {
-          setErrorFinalizar(
-            err instanceof Error ? err.message : "No se pudo finalizar el contrato. Intenta de nuevo.",
-          );
+          setErrorFinalizar(mensajeError(err, "No se pudo finalizar el contrato. Intenta de nuevo."));
         },
       },
     );
@@ -199,9 +197,7 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
         router.push("/contratos");
       },
       onError: (err) => {
-        setErrorEliminar(
-          err instanceof Error ? err.message : "No se pudo eliminar el contrato. Intenta de nuevo.",
-        );
+        setErrorEliminar(mensajeError(err, "No se pudo eliminar el contrato. Intenta de nuevo."));
       },
     });
   }
@@ -279,9 +275,7 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
       }
       window.open(url, "_blank", "noopener,noreferrer");
     } catch (err) {
-      setAvisoContrato(
-        err instanceof Error ? err.message : "No se pudo generar el contrato. Intenta de nuevo.",
-      );
+      setAvisoContrato(mensajeError(err, "No se pudo generar el contrato. Intenta de nuevo."));
     } finally {
       setGenerandoContrato(false);
     }
@@ -308,9 +302,7 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
         `Puedes revisarlo aquí (enlace válido por 7 días): ${url}`;
       abrirWhatsApp(r.cliente_telefono, mensaje);
     } catch (err) {
-      setAvisoContrato(
-        err instanceof Error ? err.message : "No se pudo generar el contrato. Intenta de nuevo.",
-      );
+      setAvisoContrato(mensajeError(err, "No se pudo generar el contrato. Intenta de nuevo."));
     } finally {
       setGenerandoContrato(false);
     }

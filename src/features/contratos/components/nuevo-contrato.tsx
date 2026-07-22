@@ -44,7 +44,7 @@ import {
   type VehiculoDisponible,
 } from "@/features/contratos/hooks/use-contratos";
 import { FirmaCanvas, type FirmaCanvasHandle } from "@/components/ui/firma-canvas";
-import { cn } from "@/lib/utils";
+import { cn, mensajeError } from "@/lib/utils";
 
 // ── Constantes ───────────────────────────────────────────────
 const FRECUENCIAS: { id: FrecuenciaPago; label: string }[] = [
@@ -640,9 +640,7 @@ export default function NuevoContrato() {
 
             {crear.isError && (
               <p className="rounded-xl bg-oxido/10 p-3 text-sm font-medium text-oxido">
-                {crear.error instanceof Error
-                  ? crear.error.message
-                  : "No se pudo crear el contrato. Intenta de nuevo."}
+                {mensajeError(crear.error, "No se pudo crear el contrato. Intenta de nuevo.")}
               </p>
             )}
 

@@ -14,7 +14,15 @@ import { motion } from "framer-motion";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Camera, Check, Plus, Search, Trash2, UserRound, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { cn, subirImagen, terminoBusquedaSeguro, urlFirmada, urlFirmadas } from "@/lib/utils";
+import {
+  cn,
+  subirImagen,
+  terminoBusquedaSeguro,
+  urlFirmada,
+  urlFirmadas,
+  mensajeError,
+  esErrorDuplicado,
+} from "@/lib/utils";
 
 // ── Tipos y hooks ────────────────────────────────────────────
 export interface Cliente {
@@ -416,9 +424,9 @@ export function FormularioCliente({ id }: { id?: string }) {
 
       {guardar.isError && (
         <p className="rounded-xl bg-oxido/10 p-3 text-sm font-medium text-oxido">
-          {guardar.error instanceof Error && /duplicate|unique/i.test(guardar.error.message)
+          {esErrorDuplicado(guardar.error)
             ? `Ya existe un cliente con ese ${tipoDoc}.`
-            : "No se pudo guardar. Revisa los datos e intenta de nuevo."}
+            : mensajeError(guardar.error, "No se pudo guardar. Revisa los datos e intenta de nuevo.")}
         </p>
       )}
 
@@ -449,9 +457,7 @@ export function FormularioCliente({ id }: { id?: string }) {
               </p>
               {eliminar.isError && (
                 <p className="rounded-xl bg-oxido/10 p-3 text-sm font-medium text-oxido">
-                  {eliminar.error instanceof Error
-                    ? eliminar.error.message
-                    : "No se pudo eliminar el cliente. Intenta de nuevo."}
+                  {mensajeError(eliminar.error, "No se pudo eliminar el cliente. Intenta de nuevo.")}
                 </p>
               )}
               <div className="flex gap-2">

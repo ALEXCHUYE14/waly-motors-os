@@ -22,7 +22,7 @@ import {
   type Vehiculo,
 } from "@/features/vehiculos/hooks/use-vehiculos";
 import { TabMantenimiento } from "@/features/vehiculos/components/mantenimiento";
-import { cn } from "@/lib/utils";
+import { cn, mensajeError, esErrorDuplicado } from "@/lib/utils";
 
 // ── Estados con semántica visual ─────────────────────────────
 const ESTADOS: { id: EstadoVehiculo | "todos"; label: string }[] = [
@@ -229,9 +229,7 @@ export function FormularioVehiculo({ id }: { id?: string }) {
         router.push("/vehiculos");
       },
       onError: (err) => {
-        setErrorEliminar(
-          err instanceof Error ? err.message : "No se pudo eliminar el vehículo. Intenta de nuevo.",
-        );
+        setErrorEliminar(mensajeError(err, "No se pudo eliminar el vehículo. Intenta de nuevo."));
       },
     });
   }
@@ -408,9 +406,9 @@ export function FormularioVehiculo({ id }: { id?: string }) {
 
           {guardar.isError && (
             <p className="rounded-xl bg-oxido/10 p-3 text-sm font-medium text-oxido">
-              {guardar.error instanceof Error && /duplicate|unique/i.test(guardar.error.message)
+              {esErrorDuplicado(guardar.error)
                 ? "Ya existe una mototaxi con esa placa o número de chasis."
-                : "No se pudo guardar. Revisa los datos e intenta de nuevo."}
+                : mensajeError(guardar.error, "No se pudo guardar. Revisa los datos e intenta de nuevo.")}
             </p>
           )}
 

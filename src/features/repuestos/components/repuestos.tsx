@@ -22,7 +22,7 @@ import {
   type Repuesto,
   type TipoMovimiento,
 } from "@/features/repuestos/hooks/use-repuestos";
-import { cn } from "@/lib/utils";
+import { cn, mensajeError, esErrorDuplicado } from "@/lib/utils";
 
 const fechaHora = new Intl.DateTimeFormat("es-PE", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 
@@ -201,9 +201,9 @@ export function FormularioRepuesto({ id }: { id?: string }) {
 
       {guardar.isError && (
         <p className="rounded-xl bg-oxido/10 p-3 text-sm font-medium text-oxido">
-          {guardar.error instanceof Error && /duplicate|unique/i.test(guardar.error.message)
+          {esErrorDuplicado(guardar.error)
             ? "Ya existe un repuesto con ese código."
-            : "No se pudo guardar. Revisa los datos e intenta de nuevo."}
+            : mensajeError(guardar.error, "No se pudo guardar. Revisa los datos e intenta de nuevo.")}
         </p>
       )}
 
@@ -316,7 +316,7 @@ function SeccionMovimientos({ repuesto }: { repuesto: Repuesto }) {
         </div>
         {registrar.isError && (
           <p className="rounded-xl bg-oxido/10 p-2.5 text-xs font-medium text-oxido">
-            {registrar.error instanceof Error ? registrar.error.message : "No se pudo registrar el movimiento."}
+            {mensajeError(registrar.error, "No se pudo registrar el movimiento.")}
           </p>
         )}
         <button

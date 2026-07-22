@@ -33,7 +33,7 @@ import {
 import { supabase, soles, type MetodoPago } from "@/lib/supabase";
 import { useRegistrarPago } from "@/features/pagos/hooks/use-registrar-pago";
 import { generarComprobantePago, compartirComprobante, type ResultadoComprobante } from "@/lib/comprobante";
-import { cn, urlFirmadas } from "@/lib/utils";
+import { cn, urlFirmadas, mensajeError } from "@/lib/utils";
 
 // ── Tipos ────────────────────────────────────────────────────
 interface ResultadoBusqueda {
@@ -500,9 +500,7 @@ export default function RegistroExpress() {
 
             {registrar.isError && !registrar.encoladoOffline && (
               <p className="rounded-xl bg-oxido/10 p-3 text-sm font-medium text-oxido">
-                {registrar.error instanceof Error
-                  ? registrar.error.message
-                  : "No se pudo registrar el pago. Intenta de nuevo."}
+                {mensajeError(registrar.error, "No se pudo registrar el pago. Intenta de nuevo.")}
               </p>
             )}
 

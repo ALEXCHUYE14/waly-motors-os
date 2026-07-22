@@ -18,6 +18,39 @@ export function terminoBusquedaSeguro(termino: string): string {
   return termino.replace(/[,()]/g, "").trim();
 }
 
+/**
+ * Extrae un mensaje legible de cualquier forma de error. `err instanceof
+ * Error` puede dar `false` para un `PostgrestError` de Supabase u otros
+ * errores de terceros (por ejemplo, si dos copias del mismo paquete
+ * quedan cargadas en bundles distintos, cada una con su propia clase
+ * `Error` interna) — cuando eso pasa, cada pantalla que dependía de ese
+ * chequeo mostraba un mensaje genérico ("No se pudo guardar...") en vez
+ * del motivo real, escondiendo el error de verdad. Esta función revisa
+ * primero `instanceof Error`, pero si falla, igual busca un campo
+ * `.message` de tipo string antes de rendirse al texto de repuesto.
+ */
+export function mensajeError(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message.trim()) return err.message;
+  if (typeof err === "string" && err.trim()) return err;
+  if (
+    err &&
+    typeof err === "object" &&
+    "message" in err &&
+    typeof (err as { message: unknown }).message === "string" &&
+    (err as { message: string }).message.trim()
+  ) {
+    return (err as { message: string }).message;
+  }
+  return fallback;
+}
+
+/** Igual detección que antes ("¿es un choque con una restricción unique
+ *  de la base de datos?"), pero usando `mensajeError` en vez de exigir
+ *  `instanceof Error` — ver el comentario de `mensajeError`. */
+export function esErrorDuplicado(err: unknown): boolean {
+  return /duplicate|unique/i.test(mensajeError(err, ""));
+}
+
 export type BucketPrivado = "vehiculos" | "clientes" | "evidencias" | "contratos" | "garantias";
 
 /**

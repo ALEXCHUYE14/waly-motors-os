@@ -16,6 +16,7 @@
 import { useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase, type MetodoPago } from "@/lib/supabase";
+import { mensajeError } from "@/lib/utils";
 
 // ── Tipos ────────────────────────────────────────────────────
 export interface NuevoCobro {
@@ -75,7 +76,7 @@ function agregarCobroFallido(item: CobroEncolado, error: unknown): void {
   const fallidos = leerCobrosFallidos();
   fallidos.push({
     ...item,
-    error: error instanceof Error ? error.message : "Error desconocido al reintentar el cobro",
+    error: mensajeError(error, "Error desconocido al reintentar el cobro"),
     falloEn: new Date().toISOString(),
   });
   localStorage.setItem(CLAVE_FALLIDOS, JSON.stringify(fallidos));

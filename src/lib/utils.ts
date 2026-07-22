@@ -93,6 +93,35 @@ export function abrirWhatsApp(telefono: string, mensaje: string): void {
 // Se carga una sola vez y se reutiliza — usado para incrustarlo en
 // comprobantes y contratos en PDF. Si falla (offline, archivo ausente),
 // el documento se genera igual, sin logo, nunca rompe la descarga/envío.
+
+/** El archivo trae un marco negro dibujado en el propio borde de la
+ *  imagen — a diferencia del login (donde un `scale` + `overflow-hidden`
+ *  en CSS recorta visualmente), `jsPDF.addImage` dibuja los píxeles tal
+ *  cual, así que el recorte hay que hacerlo antes, sobre un canvas. Se
+ *  recorta una sola vez aquí para que todo lo que use este logo
+ *  (comprobantes, contratos) lo reciba ya sin marco. */
+function recortarMarcoLogo(img: HTMLImageElement): Promise<HTMLImageElement> {
+  const recorte = 0.07; // 7% por lado — cubre el marco sin comerse el dibujo
+  const sx = img.naturalWidth * recorte;
+  const sy = img.naturalHeight * recorte;
+  const sw = img.naturalWidth - sx * 2;
+  const sh = img.naturalHeight - sy * 2;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = sw;
+  canvas.height = sh;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return Promise.resolve(img);
+
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+  return new Promise((resolve) => {
+    const recortado = new Image();
+    recortado.onload = () => resolve(recortado);
+    recortado.onerror = () => resolve(img); // si algo falla, mejor con marco que sin logo
+    recortado.src = canvas.toDataURL("image/png");
+  });
+}
+
 let logoSistemaPromise: Promise<HTMLImageElement | null> | null = null;
 
 export function cargarLogoSistema(): Promise<HTMLImageElement | null> {
@@ -100,7 +129,13 @@ export function cargarLogoSistema(): Promise<HTMLImageElement | null> {
   if (!logoSistemaPromise) {
     logoSistemaPromise = new Promise((resolve) => {
       const img = new window.Image();
-      img.onload = () => resolve(img.naturalWidth > 0 ? img : null);
+      img.onload = () => {
+        if (img.naturalWidth === 0) {
+          resolve(null);
+          return;
+        }
+        recortarMarcoLogo(img).then(resolve);
+      };
       img.onerror = () => resolve(null);
       img.src = "/img/logo.png";
     });

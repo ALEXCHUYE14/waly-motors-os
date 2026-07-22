@@ -3,7 +3,8 @@ import { soles, type FrecuenciaPago } from "@/lib/supabase";
 import { cargarLogoSistema, type AdjuntoImagen } from "@/lib/utils";
 
 // ── Colores de marca en RGB ──────────────────────────────────
-const COBRE: [number, number, number] = [201, 123, 61];
+// Sin naranja: todo el contrato va en negro/negrita (pedido explícito) —
+// el acento COBRE queda reservado a otras piezas (comprobantes, UI).
 const GRAFITO: [number, number, number] = [32, 31, 29];
 const GRIS: [number, number, number] = [140, 137, 131];
 const BORDE: [number, number, number] = [234, 231, 225];
@@ -141,12 +142,12 @@ export async function generarContratoPdf(d: DatosContratoPdf): Promise<jsPDF> {
 
   function titulo(texto: string) {
     verificarEspacio(10);
-    doc.setTextColor(...COBRE);
+    doc.setTextColor(...GRAFITO);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
     doc.text(texto, margenX, y);
     y += 2;
-    doc.setDrawColor(...COBRE);
+    doc.setDrawColor(...GRAFITO);
     doc.setLineWidth(0.5);
     doc.line(margenX, y, ancho - margenX, y);
     y += 6;
@@ -189,8 +190,11 @@ export async function generarContratoPdf(d: DatosContratoPdf): Promise<jsPDF> {
 
   // ── Portada / membrete ──────────────────────────────────────
   // Sin franja de color: el logo real del sistema reemplaza el título de
-  // texto, y todo el membrete va en negro y negrita (pedido explícito,
-  // en vez del bloque naranja con "WALY MOTORS" en blanco).
+  // texto, y todo el membrete va en negro y negrita. El título del
+  // contrato va en SU PROPIA fila, a todo el ancho — antes compartía
+  // fila con el N°/fecha (a la derecha) y, si el título era largo, el
+  // texto terminaba encimado con la fecha en vez de simplemente truncar
+  // o bajar de línea.
   const logoAncho = 30;
   const logoAlto = logo ? logoAncho * (logo.naturalHeight / logo.naturalWidth) : 0;
   if (logo) {
@@ -201,24 +205,24 @@ export async function generarContratoPdf(d: DatosContratoPdf): Promise<jsPDF> {
     }
   }
 
-  const textoX = logo ? margenX + logoAncho + 8 : margenX;
-  const textoY = logo ? 6 + logoAlto / 2 : 12;
-
   doc.setTextColor(...GRAFITO);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(10.5);
-  doc.text(
-    d.tipo === "alquiler"
-      ? "Contrato privado de alquiler de vehículo menor (trimoto)"
-      : "Contrato privado de alquiler-venta de vehículo menor (trimoto)",
-    textoX,
-    textoY,
-  );
   doc.setFontSize(9);
   doc.text(`N° ${d.contratoId.slice(0, 8).toUpperCase()}`, ancho - margenX, 10, { align: "right" });
   doc.text(fecha.format(new Date(d.creadoEnIso)), ancho - margenX, 16, { align: "right" });
 
-  y = Math.max(6 + logoAlto + 6, 24);
+  // Fila del título: debajo de la fila logo/N°-fecha, a todo el ancho de
+  // la página — nunca puede chocar con nada más porque no comparte fila.
+  y = Math.max(6 + logoAlto, 20) + 6;
+  doc.setFontSize(11);
+  const tituloContrato =
+    d.tipo === "alquiler"
+      ? "Contrato privado de alquiler de vehículo menor (trimoto)"
+      : "Contrato privado de alquiler-venta de vehículo menor (trimoto)";
+  const lineasTitulo = doc.splitTextToSize(tituloContrato, ancho - margenX * 2);
+  doc.text(lineasTitulo, margenX, y);
+  y += lineasTitulo.length * 5 + 4;
+
   doc.setDrawColor(...GRAFITO);
   doc.setLineWidth(0.4);
   doc.line(margenX, y, ancho - margenX, y);
@@ -406,7 +410,7 @@ export async function generarContratoPdf(d: DatosContratoPdf): Promise<jsPDF> {
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
-  doc.setTextColor(...COBRE);
+  doc.setTextColor(...GRAFITO);
   doc.text("EL ARRENDADOR", colArrendadorX + colAncho / 2, y, { align: "center" });
   doc.text("EL ARRENDATARIO", colArrendatarioX + colAncho / 2, y, { align: "center" });
   y += 9;

@@ -138,6 +138,11 @@ export function useBuscarClientes(termino: string) {
       const { data, error } = await supabase
         .from("clientes")
         .select("id, tipo_documento, nombre_completo, numero_documento, telefono, direccion, foto_perfil")
+        // Filtrado en la propia consulta (no después en JS): así un
+        // cliente eliminado nunca le quita un lugar a uno activo dentro
+        // del `limit(8)` — filtrar después del límite podría devolver
+        // menos de 8 resultados activos aunque hubiera más disponibles.
+        .eq("activo", true)
         .or(`nombre_completo.ilike.%${q}%,numero_documento.like.${q}%`)
         .limit(8);
       if (error) throw error;
@@ -340,8 +345,14 @@ export function useEliminarContrato() {
       };
     },
     onSuccess: () => {
+      // Invalida todo lo que pueda mostrar contratos, aunque un contrato
+      // finalizado (el único que se puede borrar) ya no debería
+      // aparecer en la mayoría de estas listas — por si acaso algún
+      // caché quedó con datos de antes de finalizarlo.
       void queryClient.invalidateQueries({ queryKey: ["contratos"] });
       void queryClient.invalidateQueries({ queryKey: ["kpis-dashboard"] });
+      void queryClient.invalidateQueries({ queryKey: ["buscar-contratos"] });
+      void queryClient.invalidateQueries({ queryKey: ["clientes-en-mora"] });
     },
   });
 }

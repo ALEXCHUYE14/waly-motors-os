@@ -53,7 +53,11 @@ function useClientes(termino: string) {
     // La mutación de guardar cliente ya invalida esta key explícitamente.
     staleTime: 60_000,
     queryFn: async (): Promise<Cliente[]> => {
-      let q = supabase.from("clientes").select("*").order("nombre_completo").limit(50);
+      // Filtrado en la propia consulta (no después en JS): filtrar
+      // después del `limit(50)` podría devolver menos de 50 clientes
+      // activos aunque hubiera más disponibles, si varios eliminados
+      // quedaran ordenados antes en la página.
+      let q = supabase.from("clientes").select("*").eq("activo", true).order("nombre_completo").limit(50);
       const t = terminoBusquedaSeguro(debounced);
       if (t.length >= 2) {
         q = q.or(`nombre_completo.ilike.%${t}%,numero_documento.like.${t}%`);
@@ -61,11 +65,7 @@ function useClientes(termino: string) {
       const { data, error } = await q;
       if (error) throw error;
 
-      // Se filtra en JS (no con `.eq("activo", true)` en la query) para que
-      // el listado no se rompa en instalaciones donde todavía no se aplicó
-      // la migración 00012: si la columna no existe, `activo` es `undefined`
-      // y el cliente se sigue mostrando con normalidad.
-      const visibles = (data ?? []).filter((c) => c.activo !== false);
+      const visibles = data ?? [];
 
       // UNA sola llamada HTTP para firmar las fotos de toda la lista
       // (antes: 1 llamada por cliente → N requests).

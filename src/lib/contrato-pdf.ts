@@ -7,7 +7,6 @@ import { cargarLogoSistema, cargarFirmaArrendador, type AdjuntoImagen } from "@/
 // el acento COBRE queda reservado a otras piezas (comprobantes, UI).
 const GRAFITO: [number, number, number] = [32, 31, 29];
 const GRIS: [number, number, number] = [140, 137, 131];
-const BORDE: [number, number, number] = [234, 231, 225];
 
 // ── Identidad fija de EL ARRENDADOR — persona natural, dueño de la flota.
 // Tomada del modelo de contrato interno (features/contratos/CONTRATO.pdf):
@@ -216,12 +215,16 @@ export async function generarContratoPdf(d: DatosContratoPdf): Promise<jsPDF> {
   // la página — nunca puede chocar con nada más porque no comparte fila.
   y = Math.max(6 + logoAlto, 20) + 6;
   doc.setFontSize(11);
-  const tituloContrato =
+  // Centrado y en mayúsculas (pedido explícito) — se pasa a mayúsculas
+  // ANTES de calcular el ajuste de línea, para que el ancho medido
+  // coincida con el texto realmente dibujado.
+  const tituloContrato = (
     d.tipo === "alquiler"
       ? "Contrato privado de alquiler de vehículo menor (trimoto)"
-      : "Contrato privado de alquiler-venta de vehículo menor (trimoto)";
+      : "Contrato privado de alquiler-venta de vehículo menor (trimoto)"
+  ).toUpperCase();
   const lineasTitulo = doc.splitTextToSize(tituloContrato, ancho - margenX * 2);
-  doc.text(lineasTitulo, margenX, y);
+  doc.text(lineasTitulo, ancho / 2, y, { align: "center" });
   y += lineasTitulo.length * 5 + 4;
 
   doc.setDrawColor(...GRAFITO);
@@ -346,11 +349,9 @@ export async function generarContratoPdf(d: DatosContratoPdf): Promise<jsPDF> {
   const filaFirmaY = y;
   const altoCaja = 26;
 
-  doc.setDrawColor(...BORDE);
-  doc.setLineWidth(0.3);
-  doc.rect(colArrendadorX, filaFirmaY, colAncho, altoCaja);
-  doc.rect(colArrendatarioX, filaFirmaY, colAncho, altoCaja);
-
+  // Sin marco rectangular alrededor de las firmas (pedido explícito) —
+  // solo la imagen/placeholder y, más abajo, la línea de firma sobre la
+  // que va el nombre.
   doc.setFont("helvetica", "italic");
   doc.setFontSize(7.5);
   doc.setTextColor(...GRIS);

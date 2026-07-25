@@ -1,6 +1,6 @@
 import { jsPDF } from "jspdf";
 import { soles, type FrecuenciaPago } from "@/lib/supabase";
-import { cargarLogoSistema, type AdjuntoImagen } from "@/lib/utils";
+import { cargarLogoSistema, cargarFirmaArrendador, type AdjuntoImagen } from "@/lib/utils";
 
 // ── Colores de marca en RGB ──────────────────────────────────
 // Sin naranja: todo el contrato va en negro/negrita (pedido explícito) —
@@ -123,6 +123,7 @@ export function nombreArchivoContrato(d: Pick<DatosContratoPdf, "vehiculoPlaca" 
 export async function generarContratoPdf(d: DatosContratoPdf): Promise<jsPDF> {
   validarDatosContrato(d);
   const logo = await cargarLogoSistema();
+  const firmaArrendador = await cargarFirmaArrendador();
 
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const ancho = doc.internal.pageSize.getWidth();
@@ -353,9 +354,43 @@ export async function generarContratoPdf(d: DatosContratoPdf): Promise<jsPDF> {
   doc.setFont("helvetica", "italic");
   doc.setFontSize(7.5);
   doc.setTextColor(...GRIS);
-  doc.text("Espacio para firma", colArrendadorX + colAncho / 2, filaFirmaY + altoCaja / 2, {
-    align: "center",
-  });
+
+  // Firma fija de EL ARRENDADOR (public/img/firma.png) — se incrusta
+  // automáticamente en cada contrato, igual para todos, ya que Waldir no
+  // firma en pantalla como el cliente. Si el archivo no carga por algún
+  // motivo, se deja el mismo recuadro en blanco que EL ARRENDATARIO en
+  // vez de romper el PDF.
+  if (firmaArrendador) {
+    try {
+      const margenImg = 2;
+      const anchoDisponible = colAncho - margenImg * 2;
+      const altoDisponible = altoCaja - margenImg * 2;
+      // Escala uniforme (nunca deforma la firma): la menor entre "cabe a
+      // lo ancho" y "cabe a lo alto", centrada en el recuadro.
+      const escala = Math.min(
+        anchoDisponible / firmaArrendador.naturalWidth,
+        altoDisponible / firmaArrendador.naturalHeight,
+      );
+      const wFirma = firmaArrendador.naturalWidth * escala;
+      const hFirma = firmaArrendador.naturalHeight * escala;
+      doc.addImage(
+        firmaArrendador,
+        "PNG",
+        colArrendadorX + (colAncho - wFirma) / 2,
+        filaFirmaY + (altoCaja - hFirma) / 2,
+        wFirma,
+        hFirma,
+      );
+    } catch {
+      doc.text("Espacio para firma", colArrendadorX + colAncho / 2, filaFirmaY + altoCaja / 2, {
+        align: "center",
+      });
+    }
+  } else {
+    doc.text("Espacio para firma", colArrendadorX + colAncho / 2, filaFirmaY + altoCaja / 2, {
+      align: "center",
+    });
+  }
 
   // La firma del arrendatario es la capturada en pantalla durante el
   // registro (paso 4 del wizard) — si por algún motivo no llegó, se deja
@@ -424,7 +459,7 @@ export async function generarContratoPdf(d: DatosContratoPdf): Promise<jsPDF> {
   doc.setFontSize(8);
   doc.setTextColor(...GRIS);
   parrafo(
-    "La firma de EL ARRENDATARIO corresponde a una firma electrónica simple registrada en el sistema (trazo capturado digitalmente). No constituye una firma digital certificada con validez criptográfica. El espacio de EL ARRENDADOR queda reservado para su firma manuscrita.",
+    "Ambas firmas son electrónicas simples (trazo/imagen capturados digitalmente): la de EL ARRENDATARIO se registra en pantalla al momento del contrato, y la de EL ARRENDADOR se incrusta automáticamente en cada contrato. Ninguna constituye una firma digital certificada con validez criptográfica.",
   );
   doc.setFont("helvetica", "normal");
 

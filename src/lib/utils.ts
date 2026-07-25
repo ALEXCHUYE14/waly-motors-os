@@ -155,26 +155,42 @@ function recortarMarcoLogo(img: HTMLImageElement): Promise<HTMLImageElement> {
   });
 }
 
-let logoSistemaPromise: Promise<HTMLImageElement | null> | null = null;
-
-export function cargarLogoSistema(): Promise<HTMLImageElement | null> {
-  if (typeof window === "undefined") return Promise.resolve(null);
-  if (!logoSistemaPromise) {
-    logoSistemaPromise = new Promise((resolve) => {
-      const img = new window.Image();
-      img.onload = () => {
-        if (img.naturalWidth === 0) {
-          resolve(null);
-          return;
-        }
-        recortarMarcoLogo(img).then(resolve);
-      };
-      img.onerror = () => resolve(null);
-      img.src = "/img/logo.png";
-    });
-  }
-  return logoSistemaPromise;
+/** Crea un cargador de imagen pública cacheado — la imagen se pide una
+ *  sola vez sin importar cuántas veces se llame la función devuelta.
+ *  `transformar` (opcional) post-procesa la imagen ya cargada (ej. el
+ *  recorte del marco del logo) antes de cachear el resultado final. */
+function crearCargadorImagen(
+  ruta: string,
+  transformar?: (img: HTMLImageElement) => Promise<HTMLImageElement>,
+): () => Promise<HTMLImageElement | null> {
+  let promesa: Promise<HTMLImageElement | null> | null = null;
+  return () => {
+    if (typeof window === "undefined") return Promise.resolve(null);
+    if (!promesa) {
+      promesa = new Promise((resolve) => {
+        const img = new window.Image();
+        img.onload = () => {
+          if (img.naturalWidth === 0) {
+            resolve(null);
+            return;
+          }
+          if (transformar) transformar(img).then(resolve);
+          else resolve(img);
+        };
+        img.onerror = () => resolve(null);
+        img.src = ruta;
+      });
+    }
+    return promesa;
+  };
 }
+
+export const cargarLogoSistema = crearCargadorImagen("/img/logo.png", recortarMarcoLogo);
+
+/** Firma manuscrita fija de EL ARRENDADOR (Waldir Yarlequé) — se incrusta
+ *  automáticamente junto a su nombre y DNI en el PDF del contrato, igual
+ *  que la firma capturada del cliente en el bloque de EL ARRENDATARIO. */
+export const cargarFirmaArrendador = crearCargadorImagen("/img/firma.png");
 
 // ── Adjuntos de garantía incrustables en el PDF del contrato ─
 export interface AdjuntoImagen {

@@ -76,6 +76,19 @@ function nombreLegible(ruta: string): string {
   return base.replace(/^\d+-/, "");
 }
 
+/** Carga una imagen desde un data URL (ej. el PNG en base64 exportado por
+ *  el canvas de firma) para poder leer sus dimensiones reales — necesarias
+ *  para incrustarla en el PDF sin deformarla, igual que la firma fija de
+ *  EL ARRENDADOR. Devuelve `null` si la imagen no carga (nunca rompe el PDF). */
+function cargarImagenDesdeDataUrl(dataUrl: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = dataUrl;
+  });
+}
+
 /** Nunca deja pasar `undefined`/`null`/cadena vacía al documento: todo dato
  *  opcional del cliente cae a un texto explícito en vez de imprimir
  *  literalmente "undefined" o dejar un campo en blanco sin explicación. */
@@ -123,6 +136,7 @@ export async function generarContratoPdf(d: DatosContratoPdf): Promise<jsPDF> {
   validarDatosContrato(d);
   const logo = await cargarLogoSistema();
   const firmaArrendador = await cargarFirmaArrendador();
+  const firmaArrendatario = d.firmaBase64 ? await cargarImagenDesdeDataUrl(d.firmaBase64) : null;
 
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const ancho = doc.internal.pageSize.getWidth();
@@ -396,22 +410,38 @@ export async function generarContratoPdf(d: DatosContratoPdf): Promise<jsPDF> {
   // La firma del arrendatario es la capturada en pantalla durante el
   // registro (paso 4 del wizard) — si por algún motivo no llegó, se deja
   // el mismo recuadro en blanco que EL ARRENDADOR en vez de romper el PDF.
-  if (d.firmaBase64) {
+  // Se escala preservando su proporción real (igual que la firma fija de
+  // EL ARRENDADOR): antes se estiraba para llenar todo el recuadro, lo que
+  // deformaba el trazo del cliente en un documento legal.
+  if (firmaArrendatario) {
     try {
       const margenImg = 2;
+      const anchoDisponible = colAncho - margenImg * 2;
+      const altoDisponible = altoCaja - margenImg * 2;
+      const escala = Math.min(
+        anchoDisponible / firmaArrendatario.naturalWidth,
+        altoDisponible / firmaArrendatario.naturalHeight,
+      );
+      const wFirma = firmaArrendatario.naturalWidth * escala;
+      const hFirma = firmaArrendatario.naturalHeight * escala;
       doc.addImage(
-        d.firmaBase64,
+        firmaArrendatario,
         "PNG",
-        colArrendatarioX + margenImg,
-        filaFirmaY + margenImg,
-        colAncho - margenImg * 2,
-        altoCaja - margenImg * 2,
+        colArrendatarioX + (colAncho - wFirma) / 2,
+        filaFirmaY + (altoCaja - hFirma) / 2,
+        wFirma,
+        hFirma,
       );
     } catch {
       doc.text("Firma no disponible", colArrendatarioX + colAncho / 2, filaFirmaY + altoCaja / 2, {
         align: "center",
       });
     }
+  } else if (d.firmaBase64) {
+    // Había datos de firma pero la imagen no cargó (data URL corrupta, etc.).
+    doc.text("Firma no disponible", colArrendatarioX + colAncho / 2, filaFirmaY + altoCaja / 2, {
+      align: "center",
+    });
   } else {
     doc.text("Espacio para firma", colArrendatarioX + colAncho / 2, filaFirmaY + altoCaja / 2, {
       align: "center",

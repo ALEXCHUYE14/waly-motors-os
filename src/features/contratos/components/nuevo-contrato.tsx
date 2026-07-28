@@ -44,7 +44,7 @@ import {
   type VehiculoDisponible,
 } from "@/features/contratos/hooks/use-contratos";
 import { FirmaCanvas, type FirmaCanvasHandle } from "@/components/ui/firma-canvas";
-import { cn, mensajeError } from "@/lib/utils";
+import { cn, mensajeError, comprimirImagen } from "@/lib/utils";
 
 // ── Constantes ───────────────────────────────────────────────
 const FRECUENCIAS: { id: FrecuenciaPago; label: string }[] = [
@@ -171,10 +171,13 @@ export default function NuevoContrato() {
     setPaso(3);
   }
 
-  function agregarGarantias(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
-    setDocumentosGarantia((prev) => [...prev, ...files]);
+  async function agregarGarantias(e: React.ChangeEvent<HTMLInputElement>) {
+    const seleccionadas = Array.from(e.target.files ?? []);
     e.target.value = "";
+    // Solo las fotos se comprimen (PDFs de garantía se suben tal cual) —
+    // una foto pesada de la cámara nunca choca con el límite del bucket.
+    const files = await Promise.all(seleccionadas.map(comprimirImagen));
+    setDocumentosGarantia((prev) => [...prev, ...files]);
   }
 
   function quitarGarantia(idx: number) {
@@ -535,7 +538,7 @@ export default function NuevoContrato() {
                 type="file"
                 accept="image/*,application/pdf"
                 multiple
-                onChange={agregarGarantias}
+                onChange={(e) => void agregarGarantias(e)}
                 className="sr-only"
                 aria-label="Adjuntar documentos de garantía"
               />

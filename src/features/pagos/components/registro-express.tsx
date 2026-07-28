@@ -33,7 +33,7 @@ import {
 import { supabase, soles, type MetodoPago } from "@/lib/supabase";
 import { useRegistrarPago } from "@/features/pagos/hooks/use-registrar-pago";
 import { generarComprobantePago, compartirComprobante, type ResultadoComprobante } from "@/lib/comprobante";
-import { cn, urlFirmadas, mensajeError } from "@/lib/utils";
+import { cn, urlFirmadas, mensajeError, comprimirImagen } from "@/lib/utils";
 
 // ── Tipos ────────────────────────────────────────────────────
 interface ResultadoBusqueda {
@@ -154,8 +154,14 @@ export default function RegistroExpress() {
     };
   }, [previewUrl]);
 
-  function onFotoCapturada(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0] ?? null;
+  async function onFotoCapturada(e: React.ChangeEvent<HTMLInputElement>) {
+    const seleccionado = e.target.files?.[0] ?? null;
+    // Comprimida ANTES de guardarla en el estado: una foto pesada de la
+    // cámara nunca choca con el límite de tamaño del bucket, y si el
+    // cobro se encola sin señal (ver use-registrar-pago.ts), el base64
+    // que se guarda en localStorage pesa una fracción — evita superar la
+    // cuota del navegador y perder el cobro encolado.
+    const file = seleccionado ? await comprimirImagen(seleccionado) : null;
     setEvidencia(file);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(file ? URL.createObjectURL(file) : null);
@@ -448,7 +454,7 @@ export default function RegistroExpress() {
               type="file"
               accept="image/*"
               capture="environment"
-              onChange={onFotoCapturada}
+              onChange={(e) => void onFotoCapturada(e)}
               className="sr-only"
               aria-label="Capturar foto del comprobante"
             />

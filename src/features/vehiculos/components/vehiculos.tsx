@@ -22,7 +22,7 @@ import {
   type Vehiculo,
 } from "@/features/vehiculos/hooks/use-vehiculos";
 import { TabMantenimiento } from "@/features/vehiculos/components/mantenimiento";
-import { cn, mensajeError, esErrorDuplicado } from "@/lib/utils";
+import { cn, mensajeError, esErrorDuplicado, comprimirImagen } from "@/lib/utils";
 
 // ── Estados con semántica visual ─────────────────────────────
 const ESTADOS: { id: EstadoVehiculo | "todos"; label: string }[] = [
@@ -257,11 +257,15 @@ export function FormularioVehiculo({ id }: { id?: string }) {
     chasis.trim().length >= 5 &&
     Number(anio) >= 1990;
 
-  function agregarFotos(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
+  async function agregarFotos(e: React.ChangeEvent<HTMLInputElement>) {
+    const seleccionadas = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    // Comprimida ANTES de guardarla en el estado: así la vista previa ya
+    // refleja el archivo real que se va a subir, y una foto pesada de la
+    // cámara nunca choca con el límite de tamaño del bucket.
+    const files = await Promise.all(seleccionadas.map(comprimirImagen));
     setNuevasFotos((prev) => [...prev, ...files]);
     setPreviews((prev) => [...prev, ...files.map((f) => URL.createObjectURL(f))]);
-    e.target.value = "";
   }
 
   function quitarExistente(idx: number) {
@@ -351,7 +355,7 @@ export function FormularioVehiculo({ id }: { id?: string }) {
             accept="image/*"
             capture="environment"
             multiple
-            onChange={agregarFotos}
+            onChange={(e) => void agregarFotos(e)}
             className="sr-only"
             aria-label="Agregar fotos del vehículo"
           />

@@ -95,6 +95,65 @@ export async function urlFirmadas(
   return mapa;
 }
 
+// ── Compresión de fotos antes de subir ───────────────────────
+// Las cámaras de celulares/tablets modernos producen fotos de varios MB
+// (a veces 10-20 MB en resoluciones altas) — sin este paso, esas fotos
+// podían superar el límite de tamaño de los buckets de Storage y la
+// subida fallaba, o —en el cobro offline— superaban la cuota de
+// localStorage al guardarse en base64 (ver `use-registrar-pago.ts`).
+// Se redimensiona al lado más largo y se re-codifica en JPEG: de sobra
+// para verse bien en pantalla y en el PDF, a una fracción del peso
+// original. Nunca bloquea la subida: si algo falla, se sube el archivo
+// original tal cual.
+const LADO_MAXIMO_FOTO = 1920;
+const CALIDAD_JPEG_FOTO = 0.82;
+/** Si la foto ya es más liviana que esto y no hace falta redimensionarla,
+ *  no vale la pena re-comprimirla (perdería calidad sin necesidad real). */
+const PESO_MAXIMO_SIN_COMPRIMIR = 700 * 1024;
+
+export async function comprimirImagen(file: File): Promise<File> {
+  if (!file.type.startsWith("image/")) return file; // PDFs u otros adjuntos se suben tal cual
+  if (typeof createImageBitmap !== "function") return file;
+
+  let bitmap: ImageBitmap;
+  try {
+    // `imageOrientation: "from-image"` respeta el EXIF de la cámara (si no,
+    // una foto tomada en vertical podría recomprimirse rotada 90°).
+    bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+  } catch {
+    // Formato que el navegador no puede decodificar (ej. algunos HEIC en
+    // Android) — se sube el original tal cual, nunca bloquea la subida.
+    return file;
+  }
+
+  try {
+    const mayor = Math.max(bitmap.width, bitmap.height);
+    const escala = mayor > LADO_MAXIMO_FOTO ? LADO_MAXIMO_FOTO / mayor : 1;
+    if (escala === 1 && file.size <= PESO_MAXIMO_SIN_COMPRIMIR) return file;
+
+    const ancho = Math.round(bitmap.width * escala);
+    const alto = Math.round(bitmap.height * escala);
+    const canvas = document.createElement("canvas");
+    canvas.width = ancho;
+    canvas.height = alto;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0, ancho, alto);
+
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/jpeg", CALIDAD_JPEG_FOTO),
+    );
+    if (!blob || blob.size >= file.size) return file; // nunca "comprimir" a algo más pesado
+
+    const nombre = file.name.replace(/\.\w+$/, "") + ".jpg";
+    return new File([blob], nombre, { type: "image/jpeg" });
+  } catch {
+    return file;
+  } finally {
+    bitmap.close();
+  }
+}
+
 /** Sube un archivo (imagen o PDF) y devuelve la ruta interna guardable en BD. */
 export async function subirArchivo(
   bucket: BucketPrivado,

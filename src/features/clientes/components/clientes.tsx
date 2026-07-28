@@ -22,6 +22,7 @@ import {
   urlFirmadas,
   mensajeError,
   esErrorDuplicado,
+  comprimirImagen,
 } from "@/lib/utils";
 
 // ── Tipos y hooks ────────────────────────────────────────────
@@ -276,8 +277,12 @@ export function FormularioCliente({ id }: { id?: string }) {
   const telValido = telefono === "" || /^9\d{8}$/.test(telefono.replace(/\D/g, ""));
   const valido = docValido && nombre.trim().length >= 3 && telValido;
 
-  function onFoto(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0] ?? null;
+  async function onFoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const seleccionada = e.target.files?.[0] ?? null;
+    // Comprimida ANTES de guardarla en el estado: así la vista previa ya
+    // refleja el archivo real que se va a subir, y una foto pesada de la
+    // cámara nunca choca con el límite de tamaño del bucket.
+    const f = seleccionada ? await comprimirImagen(seleccionada) : null;
     setNuevaFoto(f);
     if (preview) URL.revokeObjectURL(preview);
     setPreview(f ? URL.createObjectURL(f) : null);
@@ -321,7 +326,7 @@ export function FormularioCliente({ id }: { id?: string }) {
         type="file"
         accept="image/*"
         capture="environment"
-        onChange={onFoto}
+        onChange={(e) => void onFoto(e)}
         className="sr-only"
         aria-label="Capturar foto del cliente o su documento"
       />

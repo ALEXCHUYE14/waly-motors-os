@@ -202,6 +202,7 @@ export function FormularioVehiculo({ id }: { id?: string }) {
   const [modelo, setModelo] = useState("");
   const [anio, setAnio] = useState(String(new Date().getFullYear()));
   const [chasis, setChasis] = useState("");
+  const [color, setColor] = useState("");
   const [precioAlq, setPrecioAlq] = useState("");
   const [precioVenta, setPrecioVenta] = useState("");
   const [km, setKm] = useState("0");
@@ -242,6 +243,7 @@ export function FormularioVehiculo({ id }: { id?: string }) {
     setModelo(v.modelo);
     setAnio(String(v.anio));
     setChasis(v.numero_chasis);
+    setColor(v.color ?? "");
     setPrecioAlq(v.precio_alquiler_diario ? String(v.precio_alquiler_diario) : "");
     setPrecioVenta(v.precio_venta ? String(v.precio_venta) : "");
     setKm(String(v.kilometraje));
@@ -287,6 +289,7 @@ export function FormularioVehiculo({ id }: { id?: string }) {
         modelo,
         anio: Number(anio),
         numeroChasis: chasis,
+        color,
         precioAlquilerDiario: precioAlq ? Number(precioAlq) : null,
         precioVenta: precioVenta ? Number(precioVenta) : null,
         kilometraje: Number(km) || 0,
@@ -393,6 +396,10 @@ export function FormularioVehiculo({ id }: { id?: string }) {
             <div className="col-span-2">
               <label className={etiqueta} htmlFor="chasis">N° de chasis</label>
               <input id="chasis" value={chasis} onChange={(e) => setChasis(e.target.value.toUpperCase())} className={cn(campo, "font-mono uppercase")} />
+            </div>
+            <div className="col-span-2">
+              <label className={etiqueta} htmlFor="color">Color</label>
+              <input id="color" value={color} onChange={(e) => setColor(e.target.value)} placeholder="Rojo, Azul, Blanco…" className={campo} />
             </div>
             <div>
               <label className={etiqueta} htmlFor="palq">Alquiler S/./día</label>

@@ -16,6 +16,7 @@ export interface Vehiculo {
   modelo: string;
   anio: number;
   numero_chasis: string;
+  color: string | null;
   estado: EstadoVehiculo;
   precio_alquiler_diario: number | null;
   precio_venta: number | null;
@@ -29,6 +30,7 @@ export interface DatosVehiculo {
   modelo: string;
   anio: number;
   numeroChasis: string;
+  color: string;
   precioAlquilerDiario: number | null;
   precioVenta: number | null;
   kilometraje: number;
@@ -105,6 +107,7 @@ export function useGuardarVehiculo(idExistente?: string) {
         modelo: d.modelo.trim(),
         anio: d.anio,
         numero_chasis: d.numeroChasis.toUpperCase().trim(),
+        color: d.color.trim() || null,
         precio_alquiler_diario: d.precioAlquilerDiario,
         precio_venta: d.precioVenta,
         kilometraje: d.kilometraje,

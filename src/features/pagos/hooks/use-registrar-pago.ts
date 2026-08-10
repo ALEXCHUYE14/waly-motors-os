@@ -25,6 +25,11 @@ export interface NuevoCobro {
   metodo: MetodoPago;
   evidencia: File | null;
   observaciones?: string;
+  /** Solo para "Abono adicional" (pago migrado de un registro en papel):
+   *  fecha real en que se recibió el pago, ISO. Si no se manda, la RPC
+   *  usa la fecha/hora actual (comportamiento de siempre para un cobro
+   *  en calle). */
+  fechaPago?: string;
 }
 
 interface CobroEncolado {
@@ -35,6 +40,7 @@ interface CobroEncolado {
   evidenciaBase64: string | null;
   evidenciaNombre: string | null;
   observaciones?: string;
+  fechaPago?: string;
   creadoEn: string;
 }
 
@@ -126,6 +132,7 @@ async function ejecutarCobro(cobro: NuevoCobro): Promise<void> {
     p_metodo: cobro.metodo,
     p_evidencia_url: evidenciaUrl,
     p_observaciones: cobro.observaciones ?? null,
+    p_fecha_pago: cobro.fechaPago ?? null,
   });
   if (error) throw error;
 }
@@ -171,6 +178,7 @@ export function useRegistrarPago() {
                   ? base64AArchivo(item.evidenciaBase64, item.evidenciaNombre)
                   : null,
               observaciones: item.observaciones,
+              fechaPago: item.fechaPago,
             });
           } catch (err) {
             if (esErrorDeRed(err)) {
@@ -212,6 +220,7 @@ export function useRegistrarPago() {
             : null,
           evidenciaNombre: cobro.evidencia?.name ?? null,
           observaciones: cobro.observaciones,
+          fechaPago: cobro.fechaPago,
           creadoEn: new Date().toISOString(),
         });
         guardarCola(cola);

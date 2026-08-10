@@ -13,6 +13,7 @@ const LABEL_METODO: Record<MetodoPago, string> = {
   yape: "Yape",
   plin: "Plin",
   transferencia: "Transferencia",
+  abono_adicional: "Abono adicional",
 };
 
 const fecha = new Intl.DateTimeFormat("es-PE", {

@@ -18,6 +18,7 @@ import {
   Banknote,
   Smartphone,
   Landmark,
+  BookOpen,
   FileSignature,
   Flag,
   ImageIcon,
@@ -88,6 +89,15 @@ const ICONO_METODO: Record<MetodoPago, React.ReactNode> = {
   plin: <Smartphone className="h-4 w-4" />,
   efectivo: <Banknote className="h-4 w-4" />,
   transferencia: <Landmark className="h-4 w-4" />,
+  abono_adicional: <BookOpen className="h-4 w-4" />,
+};
+
+const LABEL_METODO: Record<MetodoPago, string> = {
+  yape: "Yape",
+  plin: "Plin",
+  efectivo: "Efectivo",
+  transferencia: "Transferencia",
+  abono_adicional: "Abono adicional",
 };
 
 const fechaHora = new Intl.DateTimeFormat("es-PE", {
@@ -480,7 +490,7 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
               <div className="min-w-0 flex-1">
                 <p className="font-black tabular-nums text-grafito">{soles.format(p.monto_recibido)}</p>
                 <p className="truncate text-xs text-grafito/50">
-                  {fechaHora.format(new Date(p.fecha_pago))} · {p.metodo_pago}
+                  {fechaHora.format(new Date(p.fecha_pago))} · {LABEL_METODO[p.metodo_pago]}
                   {p.perfiles?.nombre && ` · ${p.perfiles.nombre}`}
                   {p.estado === "parcial" && " · parcial"}
                 </p>

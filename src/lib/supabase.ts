@@ -3,7 +3,7 @@ import { createBrowserClient } from "@supabase/ssr";
 // ── Tipos de dominio ─────────────────────────────────────────
 export type Rol = "admin" | "mecanico" | "asesor";
 export type EstadoVehiculo = "disponible" | "alquilado" | "en_mantenimiento" | "vendido";
-export type MetodoPago = "efectivo" | "yape" | "plin" | "transferencia";
+export type MetodoPago = "efectivo" | "yape" | "plin" | "transferencia" | "abono_adicional";
 export type FrecuenciaPago = "diario" | "semanal" | "quincenal" | "mensual";
 
 export interface ClienteEnMora {

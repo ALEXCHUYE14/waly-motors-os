@@ -27,6 +27,7 @@ import {
   Banknote,
   Smartphone,
   Landmark,
+  BookOpen,
   RotateCcw,
   Share2,
 } from "lucide-react";
@@ -50,12 +51,24 @@ interface ResultadoBusqueda {
   dias_retraso: number;
 }
 
+// Canales de cobro en vivo — se muestran en la grilla del paso 2.
+// "Abono adicional" (más abajo) NO es un canal de cobro: es la forma de
+// migrar un pago que Waly ya tiene anotado en su cuaderno, así que va
+// aparte, con su propio botón y su propio campo de fecha.
 const METODOS: { id: MetodoPago; label: string; icono: React.ReactNode }[] = [
   { id: "yape", label: "Yape", icono: <Smartphone className="h-5 w-5" /> },
   { id: "plin", label: "Plin", icono: <Smartphone className="h-5 w-5" /> },
   { id: "efectivo", label: "Efectivo", icono: <Banknote className="h-5 w-5" /> },
   { id: "transferencia", label: "Transf.", icono: <Landmark className="h-5 w-5" /> },
 ];
+
+const LABEL_METODO: Record<MetodoPago, string> = {
+  yape: "Yape",
+  plin: "Plin",
+  efectivo: "Efectivo",
+  transferencia: "Transferencia",
+  abono_adicional: "Abono adicional",
+};
 
 const MENSAJE_COMPROBANTE: Record<ResultadoComprobante, string> = {
   compartido: "Comprobante enviado.",
@@ -133,6 +146,10 @@ export default function RegistroExpress() {
   const [seleccion, setSeleccion] = useState<ResultadoBusqueda | null>(null);
   const [monto, setMonto] = useState("");
   const [metodo, setMetodo] = useState<MetodoPago>("yape");
+  // Solo se usa cuando metodo === "abono_adicional": la fecha real en que
+  // Waly recibió el pago según su cuaderno (no la de hoy, que es cuando
+  // recién lo está digitando en el sistema).
+  const [fechaAbono, setFechaAbono] = useState(() => new Date().toISOString().slice(0, 10));
   const [evidencia, setEvidencia] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
@@ -146,6 +163,11 @@ export default function RegistroExpress() {
 
   const montoNum = Number.parseFloat(monto);
   const montoValido = Number.isFinite(montoNum) && montoNum > 0;
+  const esAbono = metodo === "abono_adicional";
+  const hoyISO = new Date().toISOString().slice(0, 10);
+  // Solo importa cuando esAbono: nunca se permite una fecha futura (el
+  // pago ya ocurrió, es un registro histórico) ni una vacía.
+  const fechaAbonoValida = !esAbono || (fechaAbono !== "" && fechaAbono <= hoyISO);
 
   // Limpieza del object URL del preview
   useEffect(() => {
@@ -168,12 +190,16 @@ export default function RegistroExpress() {
   }
 
   function confirmarCobro() {
-    if (!seleccion || !montoValido) return;
+    if (!seleccion || !montoValido || !fechaAbonoValida) return;
     registrar.mutate({
       contratoId: seleccion.contrato_id,
       monto: montoNum,
       metodo,
       evidencia,
+      // El mediodía evita que, al convertir a UTC, la fecha elegida se
+      // corra al día anterior/siguiente según la zona horaria del
+      // dispositivo — mismo criterio que el resto del sistema.
+      fechaPago: esAbono ? `${fechaAbono}T12:00:00` : undefined,
     });
   }
 
@@ -184,7 +210,7 @@ export default function RegistroExpress() {
     try {
       const doc = await generarComprobantePago({
         folio: `RE-${Date.now().toString(36).toUpperCase()}`,
-        fechaIso: new Date().toISOString(),
+        fechaIso: esAbono ? `${fechaAbono}T12:00:00` : new Date().toISOString(),
         clienteNombre: seleccion.nombre_completo,
         clienteDocumento: seleccion.numero_documento,
         vehiculoPlaca: seleccion.placa,
@@ -213,6 +239,7 @@ export default function RegistroExpress() {
     setSeleccion(null);
     setMonto("");
     setMetodo("yape");
+    setFechaAbono(new Date().toISOString().slice(0, 10));
     setEvidencia(null);
     setPreviewUrl(null);
     setEstadoComprobante(null);
@@ -242,7 +269,7 @@ export default function RegistroExpress() {
         <p className="text-sm text-grafito/50">
           {offline
             ? `Se enviará automáticamente cuando vuelva la conexión. Pendientes en cola: ${registrar.pendientesEnCola}.`
-            : `${soles.format(montoNum)} de ${seleccion?.nombre_completo} vía ${metodo}.`}
+            : `${soles.format(montoNum)} de ${seleccion?.nombre_completo} vía ${LABEL_METODO[metodo]}.`}
         </p>
 
         {seleccion && (
@@ -432,11 +459,51 @@ export default function RegistroExpress() {
                   </button>
                 ))}
               </div>
+
+              {/* Aparte de los 4 canales de cobro en vivo: esto no es un
+                  cobro de hoy, es un pago que Waly ya tiene anotado en su
+                  cuaderno y quiere pasar al sistema. */}
+              <button
+                type="button"
+                onClick={() => setMetodo(esAbono ? "yape" : "abono_adicional")}
+                aria-pressed={esAbono}
+                className={cn(
+                  "mt-2 flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed py-3 text-sm font-semibold transition-colors",
+                  esAbono
+                    ? "border-amarillo bg-amarillo/15 text-grafito"
+                    : "border-borde text-grafito/50",
+                )}
+              >
+                <BookOpen className="h-4 w-4" /> Abono adicional (pago del cuaderno)
+              </button>
+
+              {esAbono && (
+                <div className="mt-3">
+                  <label
+                    htmlFor="fecha-abono"
+                    className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40"
+                  >
+                    Fecha en que se recibió el pago
+                  </label>
+                  <input
+                    id="fecha-abono"
+                    type="date"
+                    max={hoyISO}
+                    value={fechaAbono}
+                    onChange={(e) => setFechaAbono(e.target.value)}
+                    className="mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-3 text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
+                  />
+                  <p className="mt-1 text-xs text-grafito/50">
+                    Usa la fecha real del cuaderno, no la de hoy — así la mora y el historial del
+                    contrato quedan correctos.
+                  </p>
+                </div>
+              )}
             </fieldset>
 
             <button
               type="button"
-              disabled={!montoValido}
+              disabled={!montoValido || !fechaAbonoValida}
               onClick={() => setPaso(3)}
               className="w-full rounded-xl bg-amarillo py-4 font-bold text-grafito active:scale-[0.98] disabled:opacity-40"
             >
@@ -474,7 +541,11 @@ export default function RegistroExpress() {
                   <Camera className="h-8 w-8" />
                   Tomar foto del comprobante
                   <span className="text-xs font-normal">
-                    {metodo === "efectivo" ? "Opcional para efectivo" : "Captura de Yape/Plin/voucher"}
+                    {metodo === "efectivo"
+                      ? "Opcional para efectivo"
+                      : esAbono
+                        ? "Opcional — pago migrado del cuaderno"
+                        : "Captura de Yape/Plin/voucher"}
                   </span>
                 </span>
               )}
@@ -495,7 +566,13 @@ export default function RegistroExpress() {
                 ["Cliente", seleccion.nombre_completo],
                 ["Placa", seleccion.placa],
                 ["Monto", soles.format(montoNum)],
-                ["Método", METODOS.find((m) => m.id === metodo)?.label ?? metodo],
+                ["Método", LABEL_METODO[metodo]],
+                ...(esAbono
+                  ? ([["Fecha del pago", new Date(`${fechaAbono}T12:00:00`).toLocaleDateString("es-PE")]] as [
+                      string,
+                      string,
+                    ][])
+                  : []),
               ].map(([k, v]) => (
                 <div key={k} className="flex justify-between gap-4">
                   <dt className="text-grafito/50">{k}</dt>
@@ -513,7 +590,7 @@ export default function RegistroExpress() {
             <button
               type="button"
               onClick={confirmarCobro}
-              disabled={registrar.isPending}
+              disabled={registrar.isPending || !fechaAbonoValida}
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-amarillo py-4 font-bold text-grafito active:scale-[0.98] disabled:opacity-60"
             >
               {registrar.isPending ? (

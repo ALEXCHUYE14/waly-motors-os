@@ -46,6 +46,50 @@ export function sumarMeses(fechaISO: string, meses: number): string {
   return `${y}-${m}-${d}`;
 }
 
+// ── Suma de días calendario exacta ───────────────────────────
+/** Suma `dias` días calendario a una fecha ISO — delega en el motor
+ *  nativo de `Date` (anclado al mediodía), que ya normaliza correctamente
+ *  el desborde de mes/año (28/30/31 días, bisiestos) sin ninguna tabla ni
+ *  aproximación propia. */
+export function sumarDias(fechaISO: string, dias: number): string {
+  const fecha = new Date(`${fechaISO}T12:00:00`);
+  fecha.setDate(fecha.getDate() + dias);
+  const y = fecha.getFullYear();
+  const m = String(fecha.getMonth() + 1).padStart(2, "0");
+  const d = String(fecha.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * Combina meses + días sueltos en una sola fecha final, en el orden
+ * exacto pedido — PRIMERO los meses (calendario real, con el mismo
+ * "clamp" de fin de mes que `sumarMeses`), DESPUÉS los días sobre la
+ * fecha resultante. Este orden no es intercambiable con "sumar todo como
+ * días": partiendo del 31 de enero, +1 mes ya cae en 28/29 de febrero
+ * (2-3 días "menos" que sumar 31 días corridos), así que el resultado
+ * final SÍ depende de qué se sume primero. Se usa este orden en todo el
+ * sistema para "tiempo ya pagado", igual que lo especifica el negocio.
+ */
+export function sumarMesesYDias(fechaISO: string, meses: number, dias: number): string {
+  return sumarDias(sumarMeses(fechaISO, meses), dias);
+}
+
+/**
+ * Normaliza días sueltos ≥ 30 llevándolos a su equivalente en meses
+ * completos — es una convención de ENTRADA/UI (para que el campo de días
+ * no se quede con un número absurdo como "45" en vez de "1 mes y 15
+ * días"), no una aproximación de cálculo: la fecha final siempre se
+ * resuelve con `sumarMesesYDias`, que usa calendario real una vez fijados
+ * los meses/días ya normalizados. Se aplica SIEMPRE antes de calcular
+ * (no solo al mostrar en pantalla) para que el resultado no dependa de
+ * cómo el asesor haya repartido el tiempo entre los dos campos — "45
+ * días" y "1 mes y 15 días" deben dar exactamente el mismo resultado.
+ */
+export function normalizarMesesDias(meses: number, dias: number): { meses: number; dias: number } {
+  const mesesExtra = Math.floor(dias / 30);
+  return { meses: meses + mesesExtra, dias: dias - mesesExtra * 30 };
+}
+
 // ── Conteo real de días por tipo en un rango ─────────────────
 export interface ConteoDias {
   diasLunesSabado: number;
@@ -119,4 +163,78 @@ export function calcularMontoTotalPorTarifaDiaria(
   const montoTotal = redondear2(diasLunesSabado * tarifaLunesSabado + diasDomingo * tarifaDomingo);
 
   return { fechaFin, diasLunesSabado, diasDomingo, montoTotal };
+}
+
+// ── Monto ya pagado (migración de cuaderno, meses + días) ────
+export interface ResultadoAcumulado extends ConteoDias {
+  fechaHasta: string;
+  montoTotal: number;
+}
+
+export function esCantidadNoNegativaValida(valor: string): boolean {
+  const n = Number(valor);
+  return valor.trim() !== "" && Number.isInteger(n) && n >= 0;
+}
+
+/** Hoy en `YYYY-MM-DD`, comparable como texto con las fechas que
+ *  devuelven `sumarMeses`/`sumarDias`/`sumarMesesYDias` (mismo formato
+ *  zero-padded) sin pasar por objetos `Date` — evita cualquier lío de
+ *  huso horario en la comparación. */
+function hoyISO(): string {
+  const hoy = new Date();
+  const y = hoy.getFullYear();
+  const m = String(hoy.getMonth() + 1).padStart(2, "0");
+  const d = String(hoy.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * Calcula cuánto representa, en soles, un tiempo YA PAGADO expresado en
+ * meses + días sueltos (ej. "3 meses y 12 días") — usado al migrar un
+ * cliente con pagos hechos en cuaderno antes de registrarse en el
+ * sistema (ver migración 00021/00022).
+ *
+ * Secuencia exacta:
+ *   1) Normaliza días ≥ 30 a meses completos (`normalizarMesesDias`).
+ *   2) `fechaInicio` + meses normalizados + días normalizados
+ *      (`sumarMesesYDias`) → fecha hasta la que el cliente quedó al día.
+ *   3) Recorre [fechaInicio, fechaHasta) día por día real, contando
+ *      Lunes-Sábado vs. Domingo, y multiplica por cada tarifa.
+ *
+ * Lanza un error legible (nunca un NaN ni una fecha absurda silenciosa)
+ * si: meses o días son negativos, las tarifas no son > 0, o el tiempo ya
+ * pagado proyecta una fecha futura (no se puede haber pagado ya algo que
+ * todavía no ocurrió).
+ */
+export function calcularMontoAcumuladoPorTiempoPagado(
+  fechaInicioISO: string,
+  meses: number,
+  dias: number,
+  tarifaLunesSabado: number,
+  tarifaDomingo: number,
+): ResultadoAcumulado {
+  if (!Number.isInteger(meses) || meses < 0) {
+    throw new Error("Los meses ya pagados deben ser un número entero mayor o igual a cero.");
+  }
+  if (!Number.isInteger(dias) || dias < 0) {
+    throw new Error("Los días ya pagados deben ser un número entero mayor o igual a cero.");
+  }
+  if (!Number.isFinite(tarifaLunesSabado) || tarifaLunesSabado <= 0) {
+    throw new Error("La tarifa de Lunes a Sábado debe ser mayor a cero.");
+  }
+  if (!Number.isFinite(tarifaDomingo) || tarifaDomingo <= 0) {
+    throw new Error("La tarifa de Domingo debe ser mayor a cero.");
+  }
+
+  const normalizado = normalizarMesesDias(meses, dias);
+  const fechaHasta = sumarMesesYDias(fechaInicioISO, normalizado.meses, normalizado.dias);
+
+  if (fechaHasta > hoyISO()) {
+    throw new Error("El tiempo ya pagado no puede proyectarse a una fecha futura.");
+  }
+
+  const { diasLunesSabado, diasDomingo } = contarDiasPorTipo(fechaInicioISO, fechaHasta);
+  const montoTotal = redondear2(diasLunesSabado * tarifaLunesSabado + diasDomingo * tarifaDomingo);
+
+  return { fechaHasta, diasLunesSabado, diasDomingo, montoTotal };
 }

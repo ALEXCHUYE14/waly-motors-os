@@ -48,11 +48,14 @@ import {
 import { FirmaCanvas, type FirmaCanvasHandle } from "@/components/ui/firma-canvas";
 import { cn, mensajeError, comprimirImagen } from "@/lib/utils";
 import {
-  sumarMeses,
   calcularMontoTotalPorTarifaDiaria,
+  calcularMontoAcumuladoPorTiempoPagado,
+  normalizarMesesDias,
   esDuracionMesesValida,
   esTarifaDiariaValida,
+  esCantidadNoNegativaValida,
   type ResultadoCalculoTotal,
+  type ResultadoAcumulado,
 } from "@/lib/calculo-credito";
 
 /** Tarifas por defecto sugeridas al activar el cálculo automático — el
@@ -123,13 +126,12 @@ export default function NuevoContrato() {
   const [tarifaDomingo, setTarifaDomingo] = useState(TARIFA_DOMINGO_SUGERIDA);
 
   // ── Migración de cliente con pagos ya hechos en cuaderno ────
+  // "Monto Total Ya Pagado" NO tiene estado propio: es 100% derivado
+  // (solo lectura, se recalcula en cada render a partir de fecha de
+  // inicio + meses/días + tarifas) — ver `nPagosPrevios` más abajo.
   const [migrarHistorico, setMigrarHistorico] = useState(false);
   const [mesesYaPagados, setMesesYaPagados] = useState("0");
-  // Campo siempre manual (nunca se auto-sobrescribe mientras el asesor
-  // escribe) — cuando aplica el cálculo automático se ofrece como
-  // sugerencia con un botón "Usar sugerido", una acción explícita en vez
-  // de pisar en silencio lo que el asesor ya haya tecleado.
-  const [montoPagosPrevios, setMontoPagosPrevios] = useState("0");
+  const [diasYaPagados, setDiasYaPagados] = useState("0");
 
   // Firma y garantías (paso 4, ambos obligatorios)
   const firmaRef = useRef<FirmaCanvasHandle>(null);
@@ -217,38 +219,63 @@ export default function NuevoContrato() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modoAutomaticoActivo, calculoAutomatico?.montoTotal]);
 
-  // Sugerencia de "pagos previos" por tarifa diaria — solo un dato de
-  // apoyo (el asesor decide si usarlo con el botón "Usar sugerido" más
-  // abajo); nunca sobrescribe en silencio lo que ya haya escrito.
+  // "Monto Total Ya Pagado" — 100% derivado (solo lectura), se recalcula
+  // en cada render a partir de fecha de inicio + meses/días + tarifas.
+  // Las tarifas están disponibles SIEMPRE que se active la migración (no
+  // solo en modo "Tarifa diaria" del total principal): el asesor puede
+  // tener el total del contrato manual y aun así necesitar calcular por
+  // tarifa diaria cuánto es lo ya pagado — por eso `tarifasValidas` no
+  // depende de `modoAutomaticoActivo` (ver más abajo, mismos campos que
+  // se muestran dentro de la sección de migración cuando hace falta).
   const mesesYaPagadosNum = Number.parseInt(mesesYaPagados, 10) || 0;
-  let calculoPagosPrevios: ResultadoCalculoTotal | null = null;
-  if (modoAutomaticoActivo && migrarHistorico && mesesYaPagadosNum > 0 && tarifasValidas) {
+  const diasYaPagadosNum = Number.parseInt(diasYaPagados, 10) || 0;
+  const mesesDiasEntradaValida =
+    esCantidadNoNegativaValida(mesesYaPagados) && esCantidadNoNegativaValida(diasYaPagados);
+  // Días ≥ 30 se normalizan a meses ANTES de calcular (no solo al
+  // mostrar): así "45 días" y "1 mes y 15 días" dan exactamente el mismo
+  // resultado, sin importar cómo el asesor haya repartido el tiempo.
+  const { meses: mesesNormalizados, dias: diasNormalizados } = normalizarMesesDias(
+    mesesYaPagadosNum,
+    diasYaPagadosNum,
+  );
+
+  let calculoPagosPrevios: ResultadoAcumulado | null = null;
+  let errorPagosPrevios: string | null = null;
+  if (migrarHistorico && mesesDiasEntradaValida && tarifasValidas) {
     try {
-      calculoPagosPrevios = calcularMontoTotalPorTarifaDiaria(
+      calculoPagosPrevios = calcularMontoAcumuladoPorTiempoPagado(
         fechaInicio,
-        mesesYaPagadosNum,
+        mesesNormalizados,
+        diasNormalizados,
         Number(tarifaLunSab),
         Number(tarifaDomingo),
       );
-    } catch {
-      calculoPagosPrevios = null;
+    } catch (err) {
+      errorPagosPrevios = err instanceof Error ? err.message : "No se pudo calcular el monto ya pagado.";
     }
   }
 
   const nTotal = Number.parseFloat(montoTotal);
   const nInicial = Number.parseFloat(cuotaInicial) || 0;
   const nCuota = Number.parseFloat(montoCuota);
-  const nPagosPrevios = migrarHistorico ? Number.parseFloat(montoPagosPrevios) || 0 : 0;
+  const nPagosPrevios = migrarHistorico ? (calculoPagosPrevios?.montoTotal ?? 0) : 0;
   const totalYaPagado = nInicial + nPagosPrevios;
 
-  // Con la migración de histórico activa, "meses ya pagados" no puede
-  // superar la duración total (el contrato ya estaría terminado) y lo ya
-  // pagado no puede superar el monto total (dinero que nunca existió).
+  // Con la migración de histórico activa: los datos de meses/días deben
+  // ser válidos (sin error de cálculo — incluye la validación de fecha
+  // futura, ver calculo-credito.ts), el tiempo ya pagado no puede
+  // superar la duración total del contrato (si se conoce, modo
+  // automático) y lo ya pagado no puede superar el monto total (dinero
+  // que nunca existió).
   const migracionValida =
     !migrarHistorico ||
-    (mesesYaPagadosNum >= 0 &&
-      (!modoAutomaticoActivo || !duracionValida || mesesYaPagadosNum <= Number(duracionMeses)) &&
-      nPagosPrevios >= 0);
+    (mesesDiasEntradaValida &&
+      tarifasValidas &&
+      calculoPagosPrevios !== null &&
+      !errorPagosPrevios &&
+      (!modoAutomaticoActivo ||
+        !calculoAutomatico ||
+        calculoPagosPrevios.fechaHasta <= calculoAutomatico.fechaFin));
 
   const condicionesValidas =
     (!esVentaCredito || modoTotal === "manual" || (calculoAutomatico !== null && !errorCalculoAutomatico)) &&
@@ -316,9 +343,11 @@ export default function NuevoContrato() {
       montoDomingo: modoAutomaticoActivo ? Number(tarifaDomingo) : undefined,
       pagosPreviosAcumulados: migrarHistorico ? nPagosPrevios : undefined,
       // Mediodía: evita que la fecha "al día" se corra un día por huso
-      // horario — mismo criterio que el resto del sistema.
-      fechaPagosPrevios: migrarHistorico
-        ? `${sumarMeses(fechaInicio, mesesYaPagadosNum)}T12:00:00`
+      // horario — mismo criterio que el resto del sistema. `condicionesValidas`
+      // ya exige `calculoPagosPrevios !== null` cuando `migrarHistorico` está
+      // activo, así que este valor siempre existe llegado a este punto.
+      fechaPagosPrevios: migrarHistorico && calculoPagosPrevios
+        ? `${calculoPagosPrevios.fechaHasta}T12:00:00`
         : undefined,
       firmaBase64: firmaBase64Capturada,
       documentosGarantia,
@@ -741,55 +770,115 @@ export default function NuevoContrato() {
 
               {migrarHistorico && (
                 <div className="space-y-3">
-                  <div>
-                    <label htmlFor="meses-pagados" className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40">
-                      Meses / cuotas ya pagados a la fecha
-                    </label>
-                    <input
-                      id="meses-pagados"
-                      type="number"
-                      inputMode="numeric"
-                      min="0"
-                      step="1"
-                      value={mesesYaPagados}
-                      onChange={(e) => setMesesYaPagados(e.target.value)}
-                      className="mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-3 font-bold tabular-nums text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
-                    />
-                    {modoAutomaticoActivo && duracionValida && mesesYaPagadosNum > Number(duracionMeses) && (
-                      <p className="mt-1 text-xs font-medium text-oxido">
-                        No puede superar la duración total del contrato ({duracionMeses} meses).
-                      </p>
-                    )}
+                  {/* Las tarifas diarias hacen falta para este cálculo aunque
+                      el total del contrato se esté fijando a mano — si ya se
+                      muestran arriba (modo automático), no se duplican aquí. */}
+                  {!modoAutomaticoActivo && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label htmlFor="tls-mig" className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40">
+                          Lunes–Sábado (S/./día)
+                        </label>
+                        <input
+                          id="tls-mig"
+                          type="number"
+                          inputMode="decimal"
+                          min="0.01"
+                          step="0.10"
+                          value={tarifaLunSab}
+                          onChange={(e) => setTarifaLunSab(e.target.value)}
+                          className="mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-3 font-bold tabular-nums text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="td-mig" className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40">
+                          Domingo (S/./día)
+                        </label>
+                        <input
+                          id="td-mig"
+                          type="number"
+                          inputMode="decimal"
+                          min="0.01"
+                          step="0.10"
+                          value={tarifaDomingo}
+                          onChange={(e) => setTarifaDomingo(e.target.value)}
+                          className="mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-3 font-bold tabular-nums text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label htmlFor="meses-pagados" className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40">
+                        Meses ya pagados
+                      </label>
+                      <input
+                        id="meses-pagados"
+                        type="number"
+                        inputMode="numeric"
+                        min="0"
+                        step="1"
+                        value={mesesYaPagados}
+                        onChange={(e) => setMesesYaPagados(e.target.value)}
+                        className="mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-3 font-bold tabular-nums text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="dias-pagados" className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40">
+                        Días ya pagados
+                      </label>
+                      <input
+                        id="dias-pagados"
+                        type="number"
+                        inputMode="numeric"
+                        min="0"
+                        step="1"
+                        value={diasYaPagados}
+                        onChange={(e) => setDiasYaPagados(e.target.value)}
+                        className="mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-3 font-bold tabular-nums text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
+                      />
+                    </div>
                   </div>
+                  {diasYaPagadosNum >= 30 && (
+                    <p className="text-xs text-grafito/50">
+                      {diasYaPagadosNum} días equivalen a {mesesNormalizados} mes(es) y {diasNormalizados} día(s) —
+                      se usa así para el cálculo.
+                    </p>
+                  )}
+                  {modoAutomaticoActivo && calculoAutomatico && calculoPagosPrevios &&
+                    calculoPagosPrevios.fechaHasta > calculoAutomatico.fechaFin && (
+                      <p className="text-xs font-medium text-oxido">
+                        El tiempo ya pagado no puede superar la duración total del contrato ({duracionMeses}{" "}
+                        meses, hasta el {new Date(`${calculoAutomatico.fechaFin}T12:00:00`).toLocaleDateString("es-PE")}).
+                      </p>
+                  )}
+
                   <div>
                     <label htmlFor="monto-previos" className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40">
-                      Monto total ya pagado (S/.)
+                      Monto total ya pagado (S/.) — calculado automáticamente
                     </label>
                     <input
                       id="monto-previos"
-                      type="number"
-                      inputMode="decimal"
-                      min="0"
-                      step="0.10"
-                      value={montoPagosPrevios}
-                      onChange={(e) => setMontoPagosPrevios(e.target.value)}
-                      className="mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-3 font-bold tabular-nums text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
+                      type="text"
+                      readOnly
+                      value={calculoPagosPrevios ? soles.format(calculoPagosPrevios.montoTotal) : "—"}
+                      className="mt-1 w-full rounded-2xl border border-borde bg-borde/30 px-4 py-3 font-bold tabular-nums text-grafito"
                     />
-                    {calculoPagosPrevios && (
-                      <button
-                        type="button"
-                        onClick={() => setMontoPagosPrevios(String(calculoPagosPrevios!.montoTotal))}
-                        className="mt-1 text-xs font-semibold text-cobre underline"
-                      >
-                        Usar sugerido por tarifa diaria: {soles.format(calculoPagosPrevios.montoTotal)}
-                      </button>
+                    {calculoPagosPrevios ? (
+                      <p className="mt-1 text-xs text-grafito/50">
+                        {calculoPagosPrevios.diasLunesSabado} días L–S × {soles.format(Number(tarifaLunSab))} +{" "}
+                        {calculoPagosPrevios.diasDomingo} domingos × {soles.format(Number(tarifaDomingo))}.
+                        Fechado al {new Date(`${calculoPagosPrevios.fechaHasta}T12:00:00`).toLocaleDateString("es-PE")}{" "}
+                        (inicio del contrato + tiempo ya pagado) — así la mora y el historial quedan
+                        correctos desde el día uno, no como si el cliente recién empezara a pagar hoy.
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-xs text-oxido">
+                        {errorPagosPrevios ?? "Ingresa meses/días (≥ 0) y ambas tarifas (> 0) para calcularlo."}
+                      </p>
                     )}
                   </div>
-                  <p className="text-xs text-grafito/50">
-                    Se registra como un pago fechado al {new Date(`${sumarMeses(fechaInicio, mesesYaPagadosNum)}T12:00:00`).toLocaleDateString("es-PE")}{" "}
-                    (inicio del contrato + meses ya pagados) — así la mora y el historial quedan correctos
-                    desde el día uno, no como si el cliente recién empezara a pagar hoy.
-                  </p>
                 </div>
               )}
             </div>

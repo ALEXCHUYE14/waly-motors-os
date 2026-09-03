@@ -66,6 +66,19 @@ export interface NuevoContrato {
   fechaFin?: string;
   firmaBase64: string;
   documentosGarantia: File[];
+  /** Solo cuando el monto total se calculó por tarifa diaria diferenciada
+   *  (venta a crédito) — se guardan en el contrato como dato informativo
+   *  y de auditoría, ver migración 00022. */
+  duracionMeses?: number;
+  montoLunesSabado?: number;
+  montoDomingo?: number;
+  /** Migración de un cliente con pagos ya hechos en cuaderno antes de
+   *  registrarse en el sistema (ver migración 00021/00022): monto
+   *  acumulado y la fecha "al día" a la que corresponden esos pagos —
+   *  NUNCA la fecha de hoy, o la mora quedaría mal calculada desde el
+   *  primer día. */
+  pagosPreviosAcumulados?: number;
+  fechaPagosPrevios?: string; // ISO datetime
 }
 
 export interface ResultadoCrearContrato {
@@ -182,6 +195,11 @@ export function useCrearContrato() {
         p_fecha_inicio: c.fechaInicio,
         p_fecha_fin: c.fechaFin ?? null,
         p_firma_base64: c.firmaBase64,
+        p_duracion_meses: c.duracionMeses ?? null,
+        p_monto_lunes_sabado: c.montoLunesSabado ?? null,
+        p_monto_domingo: c.montoDomingo ?? null,
+        p_pagos_previos_acumulados: c.pagosPreviosAcumulados ?? 0,
+        p_fecha_pagos_previos: c.fechaPagosPrevios ?? null,
       });
       if (error) throw error;
 

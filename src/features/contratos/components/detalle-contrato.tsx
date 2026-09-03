@@ -51,6 +51,16 @@ interface ResumenContrato {
   frecuencia_pago: FrecuenciaPago;
   fecha_inicio: string;
   fecha_fin: string | null;
+  /** Solo si el total se calculó por tarifa diaria diferenciada (ver
+   *  migración 00022) — dato informativo/de auditoría, no participa en
+   *  ningún cálculo de saldo o mora (esos siempre salen de `pagos`). */
+  duracion_meses: number | null;
+  monto_lunes_sabado: number | null;
+  monto_domingo: number | null;
+  /** Monto migrado del cuaderno al crear el contrato — ya está incluido
+   *  en `total_pagado` (se insertó como fila real en `pagos`), este
+   *  campo es solo para mostrarlo por separado si hace falta. */
+  pagos_previos_acumulados: number;
   total_pagado: number;
   saldo: number;
   pct_avance: number;

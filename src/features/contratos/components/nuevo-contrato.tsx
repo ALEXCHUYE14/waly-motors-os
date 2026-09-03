@@ -33,6 +33,8 @@ import {
   FileText,
   ImageIcon,
   Download,
+  Calculator,
+  BookOpen,
   X,
 } from "lucide-react";
 import { soles, type FrecuenciaPago } from "@/lib/supabase";
@@ -45,6 +47,19 @@ import {
 } from "@/features/contratos/hooks/use-contratos";
 import { FirmaCanvas, type FirmaCanvasHandle } from "@/components/ui/firma-canvas";
 import { cn, mensajeError, comprimirImagen } from "@/lib/utils";
+import {
+  sumarMeses,
+  calcularMontoTotalPorTarifaDiaria,
+  esDuracionMesesValida,
+  esTarifaDiariaValida,
+  type ResultadoCalculoTotal,
+} from "@/lib/calculo-credito";
+
+/** Tarifas por defecto sugeridas al activar el cálculo automático — el
+ *  asesor las puede editar libremente por contrato, NUNCA son un valor
+ *  fijo grabado en el código: solo el valor inicial del campo. */
+const TARIFA_LUNES_SABADO_SUGERIDA = "28";
+const TARIFA_DOMINGO_SUGERIDA = "10";
 
 // ── Constantes ───────────────────────────────────────────────
 const FRECUENCIAS: { id: FrecuenciaPago; label: string }[] = [
@@ -98,6 +113,24 @@ export default function NuevoContrato() {
     new Date().toISOString().slice(0, 10),
   );
 
+  // ── Cálculo automático del total (solo venta a crédito) ─────
+  // "Manual" preserva el comportamiento de siempre (el asesor escribe el
+  // monto total a mano) — "Automático" es un modo aparte, opt-in, para no
+  // cambiar nada en los contratos que ya funcionan así.
+  const [modoTotal, setModoTotal] = useState<"manual" | "automatico">("manual");
+  const [duracionMeses, setDuracionMeses] = useState(""); // sin valor por defecto: nunca hardcoded
+  const [tarifaLunSab, setTarifaLunSab] = useState(TARIFA_LUNES_SABADO_SUGERIDA);
+  const [tarifaDomingo, setTarifaDomingo] = useState(TARIFA_DOMINGO_SUGERIDA);
+
+  // ── Migración de cliente con pagos ya hechos en cuaderno ────
+  const [migrarHistorico, setMigrarHistorico] = useState(false);
+  const [mesesYaPagados, setMesesYaPagados] = useState("0");
+  // Campo siempre manual (nunca se auto-sobrescribe mientras el asesor
+  // escribe) — cuando aplica el cálculo automático se ofrece como
+  // sugerencia con un botón "Usar sugerido", una acción explícita en vez
+  // de pisar en silencio lo que el asesor ya haya tecleado.
+  const [montoPagosPrevios, setMontoPagosPrevios] = useState("0");
+
   // Firma y garantías (paso 4, ambos obligatorios)
   const firmaRef = useRef<FirmaCanvasHandle>(null);
   const inputGarantias = useRef<HTMLInputElement>(null);
@@ -145,27 +178,108 @@ export default function NuevoContrato() {
     }
   }, [crear.isSuccess, crear.data]);
 
+  const esVentaCredito = tipo === "venta_credito";
+  const modoAutomaticoActivo = esVentaCredito && modoTotal === "automatico";
+
+  const duracionValida = esDuracionMesesValida(duracionMeses);
+  const tarifasValidas = esTarifaDiariaValida(tarifaLunSab) && esTarifaDiariaValida(tarifaDomingo);
+
+  // Cálculo automático del total (proyecta la fecha de inicio real N
+  // meses hacia adelante y cuenta los días de calendario reales — ver
+  // src/lib/calculo-credito.ts). Se recalcula en cada render: es una
+  // función pura y barata (a lo sumo unos miles de iteraciones para un
+  // crédito de varios años), no hace falta memoizarla.
+  let calculoAutomatico: ResultadoCalculoTotal | null = null;
+  let errorCalculoAutomatico: string | null = null;
+  if (modoAutomaticoActivo && duracionValida && tarifasValidas) {
+    try {
+      calculoAutomatico = calcularMontoTotalPorTarifaDiaria(
+        fechaInicio,
+        Number(duracionMeses),
+        Number(tarifaLunSab),
+        Number(tarifaDomingo),
+      );
+    } catch (err) {
+      errorCalculoAutomatico = err instanceof Error ? err.message : "No se pudo calcular el monto total.";
+    }
+  }
+
+  // El campo "Monto total" (mismo estado que usa el modo manual) se
+  // mantiene sincronizado con el resultado automático — así el resto del
+  // formulario (validación, resumen, payload a la RPC) no duplica NINGUNA
+  // lógica: siempre lee `montoTotal`/`nTotal` tal cual, sin importar el
+  // modo. Se declara antes del `return` anticipado de la pantalla de
+  // éxito, junto a los demás hooks (regla de hooks de React).
+  useEffect(() => {
+    if (modoAutomaticoActivo && calculoAutomatico) {
+      setMontoTotal(String(calculoAutomatico.montoTotal));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modoAutomaticoActivo, calculoAutomatico?.montoTotal]);
+
+  // Sugerencia de "pagos previos" por tarifa diaria — solo un dato de
+  // apoyo (el asesor decide si usarlo con el botón "Usar sugerido" más
+  // abajo); nunca sobrescribe en silencio lo que ya haya escrito.
+  const mesesYaPagadosNum = Number.parseInt(mesesYaPagados, 10) || 0;
+  let calculoPagosPrevios: ResultadoCalculoTotal | null = null;
+  if (modoAutomaticoActivo && migrarHistorico && mesesYaPagadosNum > 0 && tarifasValidas) {
+    try {
+      calculoPagosPrevios = calcularMontoTotalPorTarifaDiaria(
+        fechaInicio,
+        mesesYaPagadosNum,
+        Number(tarifaLunSab),
+        Number(tarifaDomingo),
+      );
+    } catch {
+      calculoPagosPrevios = null;
+    }
+  }
+
   const nTotal = Number.parseFloat(montoTotal);
   const nInicial = Number.parseFloat(cuotaInicial) || 0;
   const nCuota = Number.parseFloat(montoCuota);
+  const nPagosPrevios = migrarHistorico ? Number.parseFloat(montoPagosPrevios) || 0 : 0;
+  const totalYaPagado = nInicial + nPagosPrevios;
+
+  // Con la migración de histórico activa, "meses ya pagados" no puede
+  // superar la duración total (el contrato ya estaría terminado) y lo ya
+  // pagado no puede superar el monto total (dinero que nunca existió).
+  const migracionValida =
+    !migrarHistorico ||
+    (mesesYaPagadosNum >= 0 &&
+      (!modoAutomaticoActivo || !duracionValida || mesesYaPagadosNum <= Number(duracionMeses)) &&
+      nPagosPrevios >= 0);
+
   const condicionesValidas =
+    (!esVentaCredito || modoTotal === "manual" || (calculoAutomatico !== null && !errorCalculoAutomatico)) &&
     Number.isFinite(nTotal) && nTotal > 0 &&
     Number.isFinite(nCuota) && nCuota > 0 &&
-    nInicial >= 0 && nInicial < nTotal;
+    nInicial >= 0 && nInicial < nTotal &&
+    totalYaPagado < nTotal &&
+    migracionValida;
 
-  const numCuotasEstimadas = condicionesValidas
+  const numCuotasEstimadas = Number.isFinite(nTotal) && nTotal > 0 && nCuota > 0
     ? Math.ceil((nTotal - nInicial) / nCuota)
+    : 0;
+  /** Cuotas que realmente faltan por cobrar desde hoy — a diferencia de
+   *  `numCuotasEstimadas` (el plan total del contrato, el mismo que se
+   *  imprime en el PDF), esta resta también lo migrado del cuaderno. Solo
+   *  es un dato informativo en pantalla para el asesor. */
+  const cuotasRestantes = condicionesValidas
+    ? Math.max(0, Math.ceil((nTotal - totalYaPagado) / nCuota))
     : 0;
 
   const firmaGarantiasValidas = !firmaVacia && documentosGarantia.length > 0;
 
   function seleccionarVehiculo(v: VehiculoDisponible) {
     setVehiculo(v);
-    // Sugerencias según tipo de contrato y precios del vehículo
+    // Sugerencias según tipo de contrato y precios del vehículo — solo en
+    // modo manual: en modo automático el total lo fija el cálculo por
+    // tarifa diaria, no el precio de lista del vehículo.
     if (tipo === "alquiler" && v.precio_alquiler_diario) {
       setMontoCuota(String(v.precio_alquiler_diario));
     }
-    if (tipo === "venta_credito" && v.precio_venta) {
+    if (tipo === "venta_credito" && modoTotal === "manual" && v.precio_venta) {
       setMontoTotal(String(v.precio_venta));
     }
     setPaso(3);
@@ -196,6 +310,16 @@ export default function NuevoContrato() {
       montoCuota: nCuota,
       frecuencia,
       fechaInicio,
+      fechaFin: modoAutomaticoActivo && calculoAutomatico ? calculoAutomatico.fechaFin : undefined,
+      duracionMeses: modoAutomaticoActivo ? Number(duracionMeses) : undefined,
+      montoLunesSabado: modoAutomaticoActivo ? Number(tarifaLunSab) : undefined,
+      montoDomingo: modoAutomaticoActivo ? Number(tarifaDomingo) : undefined,
+      pagosPreviosAcumulados: migrarHistorico ? nPagosPrevios : undefined,
+      // Mediodía: evita que la fecha "al día" se corra un día por huso
+      // horario — mismo criterio que el resto del sistema.
+      fechaPagosPrevios: migrarHistorico
+        ? `${sumarMeses(fechaInicio, mesesYaPagadosNum)}T12:00:00`
+        : undefined,
       firmaBase64: firmaBase64Capturada,
       documentosGarantia,
     });
@@ -390,7 +514,7 @@ export default function NuevoContrato() {
                     setTipo(t.id);
                     if (t.id === "alquiler" && vehiculo.precio_alquiler_diario)
                       setMontoCuota(String(vehiculo.precio_alquiler_diario));
-                    if (t.id === "venta_credito" && vehiculo.precio_venta)
+                    if (t.id === "venta_credito" && modoTotal === "manual" && vehiculo.precio_venta)
                       setMontoTotal(String(vehiculo.precio_venta));
                   }}
                   className={cn(
@@ -406,20 +530,128 @@ export default function NuevoContrato() {
               ))}
             </div>
 
+            {/* Cálculo del monto total (solo venta a crédito) */}
+            {esVentaCredito && (
+              <div className="space-y-3 rounded-2xl border border-borde bg-fondo p-3">
+                <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-grafito/40">
+                  <Calculator className="h-3.5 w-3.5" /> Cálculo del monto total
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {(
+                    [
+                      { id: "manual", label: "Manual" },
+                      { id: "automatico", label: "Tarifa diaria" },
+                    ] as const
+                  ).map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      aria-pressed={modoTotal === m.id}
+                      onClick={() => setModoTotal(m.id)}
+                      className={cn(
+                        "rounded-xl border py-2.5 text-xs font-bold transition-colors",
+                        modoTotal === m.id
+                          ? "border-cobre bg-cobre/10 text-cobre"
+                          : "border-borde text-grafito/50",
+                      )}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+
+                {modoTotal === "automatico" && (
+                  <div className="space-y-3">
+                    <div>
+                      <label htmlFor="duracion" className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40">
+                        Duración del contrato (meses)
+                      </label>
+                      <input
+                        id="duracion"
+                        type="number"
+                        inputMode="numeric"
+                        min="1"
+                        step="1"
+                        value={duracionMeses}
+                        onChange={(e) => setDuracionMeses(e.target.value)}
+                        placeholder="Ej. 12, 17, 18, 24…"
+                        className="mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-3 font-bold tabular-nums text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label htmlFor="tls" className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40">
+                          Lunes–Sábado (S/./día)
+                        </label>
+                        <input
+                          id="tls"
+                          type="number"
+                          inputMode="decimal"
+                          min="0.01"
+                          step="0.10"
+                          value={tarifaLunSab}
+                          onChange={(e) => setTarifaLunSab(e.target.value)}
+                          className="mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-3 font-bold tabular-nums text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="td" className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40">
+                          Domingo (S/./día)
+                        </label>
+                        <input
+                          id="td"
+                          type="number"
+                          inputMode="decimal"
+                          min="0.01"
+                          step="0.10"
+                          value={tarifaDomingo}
+                          onChange={(e) => setTarifaDomingo(e.target.value)}
+                          className="mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-3 font-bold tabular-nums text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
+                        />
+                      </div>
+                    </div>
+
+                    {calculoAutomatico ? (
+                      <p className="rounded-xl bg-amarillo/10 p-3 text-xs text-grafito">
+                        {calculoAutomatico.diasLunesSabado} días L–S × {soles.format(Number(tarifaLunSab))} +{" "}
+                        {calculoAutomatico.diasDomingo} domingos × {soles.format(Number(tarifaDomingo))} ={" "}
+                        <span className="font-black">{soles.format(calculoAutomatico.montoTotal)}</span>. Fin
+                        estimado:{" "}
+                        <span className="font-black">
+                          {new Date(`${calculoAutomatico.fechaFin}T12:00:00`).toLocaleDateString("es-PE")}
+                        </span>
+                        .
+                      </p>
+                    ) : (
+                      <p className="text-xs text-oxido">
+                        {errorCalculoAutomatico ??
+                          "Ingresa la duración en meses y ambas tarifas (mayores a cero) para calcular el total."}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Montos */}
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2">
                 <label htmlFor="total" className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40">
                   Monto total del contrato (S/.)
+                  {modoTotal === "automatico" && esVentaCredito && " — calculado automáticamente"}
                 </label>
                 <input
                   id="total"
                   type="number"
                   inputMode="decimal"
                   min="0"
+                  readOnly={modoTotal === "automatico" && esVentaCredito}
                   value={montoTotal}
                   onChange={(e) => setMontoTotal(e.target.value)}
-                  className="mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-3 text-xl font-black tabular-nums text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
+                  className={cn(
+                    "mt-1 w-full rounded-2xl border border-borde px-4 py-3 text-xl font-black tabular-nums text-grafito focus-visible:outline-2 focus-visible:outline-amarillo",
+                    modoTotal === "automatico" && esVentaCredito ? "bg-borde/30" : "bg-tarjeta",
+                  )}
                 />
               </div>
               <div>
@@ -491,12 +723,97 @@ export default function NuevoContrato() {
               />
             </div>
 
+            {/* Migración de cliente con pagos ya hechos en cuaderno */}
+            <div className="space-y-3 rounded-2xl border border-dashed border-borde p-3">
+              <button
+                type="button"
+                aria-pressed={migrarHistorico}
+                onClick={() => setMigrarHistorico((v) => !v)}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-xl border-2 border-dashed py-3 text-sm font-semibold transition-colors",
+                  migrarHistorico
+                    ? "border-amarillo bg-amarillo/15 text-grafito justify-center"
+                    : "border-borde text-grafito/50 justify-center",
+                )}
+              >
+                <BookOpen className="h-4 w-4" /> Este cliente ya tenía pagos hechos (migración de cuaderno)
+              </button>
+
+              {migrarHistorico && (
+                <div className="space-y-3">
+                  <div>
+                    <label htmlFor="meses-pagados" className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40">
+                      Meses / cuotas ya pagados a la fecha
+                    </label>
+                    <input
+                      id="meses-pagados"
+                      type="number"
+                      inputMode="numeric"
+                      min="0"
+                      step="1"
+                      value={mesesYaPagados}
+                      onChange={(e) => setMesesYaPagados(e.target.value)}
+                      className="mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-3 font-bold tabular-nums text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
+                    />
+                    {modoAutomaticoActivo && duracionValida && mesesYaPagadosNum > Number(duracionMeses) && (
+                      <p className="mt-1 text-xs font-medium text-oxido">
+                        No puede superar la duración total del contrato ({duracionMeses} meses).
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label htmlFor="monto-previos" className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40">
+                      Monto total ya pagado (S/.)
+                    </label>
+                    <input
+                      id="monto-previos"
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      step="0.10"
+                      value={montoPagosPrevios}
+                      onChange={(e) => setMontoPagosPrevios(e.target.value)}
+                      className="mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-3 font-bold tabular-nums text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
+                    />
+                    {calculoPagosPrevios && (
+                      <button
+                        type="button"
+                        onClick={() => setMontoPagosPrevios(String(calculoPagosPrevios!.montoTotal))}
+                        className="mt-1 text-xs font-semibold text-cobre underline"
+                      >
+                        Usar sugerido por tarifa diaria: {soles.format(calculoPagosPrevios.montoTotal)}
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-xs text-grafito/50">
+                    Se registra como un pago fechado al {new Date(`${sumarMeses(fechaInicio, mesesYaPagadosNum)}T12:00:00`).toLocaleDateString("es-PE")}{" "}
+                    (inicio del contrato + meses ya pagados) — así la mora y el historial quedan correctos
+                    desde el día uno, no como si el cliente recién empezara a pagar hoy.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {migrarHistorico && Number.isFinite(nTotal) && nTotal > 0 && totalYaPagado >= nTotal && (
+              <p className="text-xs font-medium text-oxido">
+                Lo ya pagado (cuota inicial + migrado del cuaderno) no puede igualar o superar el monto
+                total — revisa los montos.
+              </p>
+            )}
+
             {condicionesValidas && (
               <p className="rounded-xl bg-amarillo/10 p-3 text-sm text-grafito">
                 ≈ <span className="font-black">{numCuotasEstimadas}</span> cuotas de{" "}
                 <span className="font-black">{soles.format(nCuota)}</span> ({frecuencia})
                 {nInicial > 0 && (
                   <> tras una inicial de <span className="font-black">{soles.format(nInicial)}</span></>
+                )}
+                {migrarHistorico && nPagosPrevios > 0 && (
+                  <>
+                    {" "}
+                    · con lo migrado del cuaderno, quedan <span className="font-black">{cuotasRestantes}</span>{" "}
+                    cuotas por cobrar
+                  </>
                 )}
                 .
               </p>
@@ -621,9 +938,22 @@ export default function NuevoContrato() {
                 ["Vehículo", `${vehiculo.placa} · ${vehiculo.modelo} ${vehiculo.anio}`],
                 ["Tipo", tipo === "alquiler" ? "Alquiler" : "Venta a crédito"],
                 ["Monto total", soles.format(nTotal)],
+                ...(modoAutomaticoActivo && calculoAutomatico
+                  ? ([
+                      ["Duración", `${duracionMeses} meses`],
+                      ["Tarifa L–S / Domingo", `${soles.format(Number(tarifaLunSab))} / ${soles.format(Number(tarifaDomingo))}`],
+                      ["Fin estimado", new Date(`${calculoAutomatico.fechaFin}T12:00:00`).toLocaleDateString("es-PE")],
+                    ] as [string, string][])
+                  : []),
                 ["Cuota inicial", soles.format(nInicial)],
+                ...(migrarHistorico && nPagosPrevios > 0
+                  ? ([["Migrado del cuaderno", soles.format(nPagosPrevios)]] as [string, string][])
+                  : []),
                 ["Cuota", `${soles.format(nCuota)} · ${frecuencia}`],
                 ["Cuotas estimadas", String(numCuotasEstimadas)],
+                ...(migrarHistorico && nPagosPrevios > 0
+                  ? ([["Cuotas restantes por cobrar", String(cuotasRestantes)]] as [string, string][])
+                  : []),
                 ["Inicio", new Date(`${fechaInicio}T12:00:00`).toLocaleDateString("es-PE")],
                 ["Garantías adjuntas", String(documentosGarantia.length)],
               ].map(([k, v]) => (

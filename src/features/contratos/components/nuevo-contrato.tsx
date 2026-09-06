@@ -54,6 +54,7 @@ import {
   esDuracionMesesValida,
   esTarifaDiariaValida,
   esCantidadNoNegativaValida,
+  redondear2,
   type ResultadoCalculoTotal,
   type ResultadoAcumulado,
 } from "@/lib/calculo-credito";
@@ -211,19 +212,32 @@ export default function NuevoContrato() {
   // automático — así el resto del formulario (validación, resumen,
   // payload a la RPC) no duplica NINGUNA lógica: siempre lee
   // `montoTotal`/`montoCuota` tal cual, sin importar el modo. Ya no se
-  // piden a mano en automático (pedido explícito): "Monto total" sale de
-  // la proyección por tarifa diaria, y "Monto por cuota" toma la tarifa
-  // Lunes-Sábado como referencia de mora (el domingo se cobra aparte, a
-  // su propia tarifa, más baja). Se declara antes del `return`
-  // anticipado de la pantalla de éxito, junto a los demás hooks (regla
-  // de hooks de React).
+  // piden a mano en automático (pedido explícito): "Monto por cuota"
+  // toma la tarifa Lunes-Sábado como referencia de mora (el domingo se
+  // cobra aparte, a su propia tarifa, más baja).
+  //
+  // El cálculo por tarifa diaria (`calculoAutomatico.montoTotal`) es
+  // PURO: son solo días × tarifa, no sabe nada de la cuota inicial. Pero
+  // "Monto total del contrato" en todo el resto del sistema (saldo,
+  // % de avance, `numCuotasEstimadas` más abajo) SIEMPRE representa el
+  // precio COMPLETO — cuota inicial incluida — porque le restan la
+  // cuota inicial para calcular lo que falta del cronograma financiado.
+  // Si se guardara aquí solo el total del cronograma (sin sumarle la
+  // inicial), esa resta la aplicaría DOS VECES: una porque nunca se
+  // sumó, y otra porque `numCuotasEstimadas`/el saldo sí la restan —
+  // encogiendo de más las cuotas que en realidad quedan del plazo
+  // pactado. Por eso se suma la cuota inicial acá, antes de guardar.
+  //
+  // Se declara antes del `return` anticipado de la pantalla de éxito,
+  // junto a los demás hooks (regla de hooks de React).
   useEffect(() => {
     if (modoAutomaticoActivo && calculoAutomatico) {
-      setMontoTotal(String(calculoAutomatico.montoTotal));
+      const inicial = Number.parseFloat(cuotaInicial) || 0;
+      setMontoTotal(String(redondear2(calculoAutomatico.montoTotal + inicial)));
       setMontoCuota(tarifaLunSab);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modoAutomaticoActivo, calculoAutomatico?.montoTotal, tarifaLunSab]);
+  }, [modoAutomaticoActivo, calculoAutomatico?.montoTotal, tarifaLunSab, cuotaInicial]);
 
   // "Monto Total Ya Pagado" — 100% derivado (solo lectura), se recalcula
   // en cada render a partir de fecha de inicio + meses/días + tarifas.
@@ -650,8 +664,21 @@ export default function NuevoContrato() {
                       <p className="rounded-xl bg-amarillo/10 p-3 text-xs text-grafito">
                         {calculoAutomatico.diasLunesSabado} días L–S × {soles.format(Number(tarifaLunSab))} +{" "}
                         {calculoAutomatico.diasDomingo} domingos × {soles.format(Number(tarifaDomingo))} ={" "}
-                        <span className="font-black">{soles.format(calculoAutomatico.montoTotal)}</span>. Fin
-                        estimado:{" "}
+                        <span className="font-black">
+                          {soles.format(redondear2(calculoAutomatico.montoTotal))}
+                        </span>{" "}
+                        de cronograma financiado
+                        {nInicial > 0 && (
+                          <>
+                            {" "}
+                            + {soles.format(nInicial)} de cuota inicial ={" "}
+                            <span className="font-black">
+                              {soles.format(redondear2(calculoAutomatico.montoTotal + nInicial))}
+                            </span>{" "}
+                            de monto total del contrato
+                          </>
+                        )}
+                        . Fin estimado:{" "}
                         <span className="font-black">
                           {new Date(`${calculoAutomatico.fechaFin}T12:00:00`).toLocaleDateString("es-PE")}
                         </span>

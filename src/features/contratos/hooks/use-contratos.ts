@@ -385,6 +385,12 @@ export interface ResumenContratoEdicion {
   tipo: "alquiler" | "venta_credito";
   estado: EstadoContrato;
   monto_total: number;
+  /** Ya pagada — no editable aquí (es una fila real en `pagos`), pero
+   *  hace falta para volver a calcular correctamente `monto_total` si se
+   *  usa el modo automático por tarifa diaria al editar (ver
+   *  editar-contrato.tsx: el cálculo por tarifa diaria no sabe nada de
+   *  la cuota inicial, hay que sumarla aparte). */
+  cuota_inicial: number;
   monto_cuota: number;
   frecuencia_pago: FrecuenciaPago;
   fecha_inicio: string;

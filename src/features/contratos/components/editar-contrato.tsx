@@ -26,6 +26,7 @@ import {
   calcularMontoTotalPorTarifaDiaria,
   esDuracionMesesValida,
   esTarifaDiariaValida,
+  redondear2,
   type ResultadoCalculoTotal,
 } from "@/lib/calculo-credito";
 import { cn, mensajeError } from "@/lib/utils";
@@ -103,14 +104,23 @@ export default function EditarContrato({ contratoId }: { contratoId: string }) {
   // cuota" dejan de pedirse a mano en modo automático — se calculan
   // solos (monto_cuota toma la tarifa Lunes-Sábado como referencia de
   // mora; el domingo se cobra aparte, a su propia tarifa).
+  //
+  // El cálculo por tarifa diaria es PURO (días × tarifa) — no sabe nada
+  // de la cuota inicial, ya pagada y NO editable aquí. Pero "Monto
+  // total" en todo el resto del sistema (saldo, cuotas estimadas)
+  // siempre representa el precio COMPLETO incluida la inicial — por eso
+  // se suma aquí antes de guardar, igual que en el wizard de creación:
+  // si no, la cuota inicial se restaría dos veces y encogería de más el
+  // cronograma financiado que en realidad queda.
   useEffect(() => {
     if (modoAutomaticoActivo && calculoAutomatico) {
-      setMontoTotal(String(calculoAutomatico.montoTotal));
+      const inicial = r?.cuota_inicial ?? 0;
+      setMontoTotal(String(redondear2(calculoAutomatico.montoTotal + inicial)));
       setMontoCuota(tarifaLunSab);
       setFechaFin(calculoAutomatico.fechaFin);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modoAutomaticoActivo, calculoAutomatico?.montoTotal, calculoAutomatico?.fechaFin, tarifaLunSab]);
+  }, [modoAutomaticoActivo, calculoAutomatico?.montoTotal, calculoAutomatico?.fechaFin, tarifaLunSab, r?.cuota_inicial]);
 
   const nTotal = Number.parseFloat(montoTotal);
   const nCuota = Number.parseFloat(montoCuota);
@@ -285,7 +295,19 @@ export default function EditarContrato({ contratoId }: { contratoId: string }) {
                 <p className="rounded-xl bg-amarillo/10 p-3 text-xs text-grafito">
                   {calculoAutomatico.diasLunesSabado} días L–S × {soles.format(Number(tarifaLunSab))} +{" "}
                   {calculoAutomatico.diasDomingo} domingos × {soles.format(Number(tarifaDomingo))} ={" "}
-                  <span className="font-black">{soles.format(calculoAutomatico.montoTotal)}</span>. Fin:{" "}
+                  <span className="font-black">{soles.format(redondear2(calculoAutomatico.montoTotal))}</span>{" "}
+                  de cronograma financiado
+                  {(r?.cuota_inicial ?? 0) > 0 && (
+                    <>
+                      {" "}
+                      + {soles.format(r!.cuota_inicial)} de cuota inicial ya pagada ={" "}
+                      <span className="font-black">
+                        {soles.format(redondear2(calculoAutomatico.montoTotal + (r?.cuota_inicial ?? 0)))}
+                      </span>{" "}
+                      de monto total del contrato
+                    </>
+                  )}
+                  . Fin:{" "}
                   <span className="font-black">
                     {new Date(`${calculoAutomatico.fechaFin}T12:00:00`).toLocaleDateString("es-PE")}
                   </span>

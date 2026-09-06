@@ -557,6 +557,16 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
                   {p.perfiles?.nombre && ` · ${p.perfiles.nombre}`}
                   {p.estado === "parcial" && " · parcial"}
                 </p>
+                {/* Separa visualmente la cuota inicial (y los pagos
+                    previos migrados del cuaderno) de las cuotas
+                    regulares del cronograma financiado — ambas RPC ya
+                    marcan estos pagos con su propio texto en
+                    `observaciones`; una cuota regular no trae ninguno. */}
+                {p.observaciones && (
+                  <span className="mt-1 inline-block rounded-md bg-cobre/10 px-1.5 py-0.5 text-[10px] font-semibold text-cobre">
+                    {p.observaciones}
+                  </span>
+                )}
               </div>
               <button
                 type="button"

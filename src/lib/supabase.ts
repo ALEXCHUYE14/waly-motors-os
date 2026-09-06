@@ -19,7 +19,13 @@ export interface ClienteEnMora {
 }
 
 export interface KpisDashboard {
+  /** Cobranza real de cuotas en calle — excluye cuotas iniciales (dinero
+   *  de adjudicación, no de cobranza diaria; ver migración 00025). */
   balance_hoy: number;
+  /** Cuotas iniciales cobradas hoy — registro independiente, separado a
+   *  propósito de `balance_hoy` (mismo criterio que ya usa la app para
+   *  distinguir "abono adicional" de un cobro en calle). */
+  cuotas_iniciales_hoy: number;
   pct_flota_activa: number;
   clientes_en_mora: number;
   vehiculos_en_alerta_mantenimiento: number;

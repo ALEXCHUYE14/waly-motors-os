@@ -19,6 +19,7 @@ import {
   Bike,
   Wrench,
   Package,
+  HandCoins,
   ChevronRight,
   X,
 } from "lucide-react";
@@ -309,6 +310,15 @@ export default function Dashboard() {
           valor={String(enMantenimiento)}
           icono={<Wrench className="h-4 w-4" />}
           alerta={enMantenimiento > 0}
+          cargando={kpis.isLoading}
+        />
+        {/* Registro independiente de "Caja hoy": dinero de adjudicación
+            (cuotas iniciales), no de cobranza diaria en calle — separado
+            a propósito para no descuadrar la lectura de "Caja hoy". */}
+        <KpiCard
+          titulo="Iniciales hoy"
+          valor={soles.format(kpis.data?.cuotas_iniciales_hoy ?? 0)}
+          icono={<HandCoins className="h-4 w-4" />}
           cargando={kpis.isLoading}
         />
       </section>

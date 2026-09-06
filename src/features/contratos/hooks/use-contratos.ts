@@ -374,3 +374,87 @@ export function useEliminarContrato() {
     },
   });
 }
+
+// ── Editar contrato (corregir errores sin finalizar/eliminar) ─
+/** Subconjunto de `resumen_contrato` que necesita el formulario de
+ *  edición para precargar sus campos — misma `queryKey` que el hook
+ *  local `useResumen` de `detalle-contrato.tsx` (mismo RPC, misma
+ *  forma): así invalidar `["resumen-contrato", id]` refresca ambos. */
+export interface ResumenContratoEdicion {
+  contrato_id: string;
+  tipo: "alquiler" | "venta_credito";
+  estado: EstadoContrato;
+  monto_total: number;
+  monto_cuota: number;
+  frecuencia_pago: FrecuenciaPago;
+  fecha_inicio: string;
+  fecha_fin: string | null;
+  duracion_meses: number | null;
+  monto_lunes_sabado: number | null;
+  monto_domingo: number | null;
+  cliente_nombre: string;
+  vehiculo_placa: string;
+}
+
+export function useResumenContratoEdicion(contratoId: string) {
+  return useQuery({
+    queryKey: ["resumen-contrato", contratoId],
+    enabled: Boolean(contratoId),
+    queryFn: async (): Promise<ResumenContratoEdicion> => {
+      const { data, error } = await supabase.rpc("resumen_contrato", { p_contrato_id: contratoId });
+      if (error) throw error;
+      return data as ResumenContratoEdicion;
+    },
+  });
+}
+
+export interface DatosEditarContrato {
+  contratoId: string;
+  montoTotal: number;
+  montoCuota: number;
+  frecuencia: FrecuenciaPago;
+  fechaInicio: string;
+  fechaFin?: string | null;
+  duracionMeses?: number | null;
+  montoLunesSabado?: number | null;
+  montoDomingo?: number | null;
+}
+
+/** Corrige un contrato con errores (monto, cuota, frecuencia, fechas,
+ *  duración/tarifas) sin necesidad de finalizarlo ni eliminarlo. La RPC
+ *  bloquea la edición de contratos ya finalizados (registro histórico) y
+ *  deliberadamente no permite tocar cliente/vehículo/tipo — son
+ *  estructurales, cambiarlos exige rehacer el bloqueo de disponibilidad
+ *  del vehículo que ya hace `crear_contrato`. Al guardar, la RPC limpia
+ *  `contrato_pdf_url`: el PDF viejo queda con datos incorrectos, y el
+ *  mecanismo "on-demand" que ya existe (`asegurarRutaContratoPdf` en
+ *  detalle-contrato.tsx) lo regenera solo la próxima vez que se pida,
+ *  ya con los datos corregidos. */
+export function useEditarContrato() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (d: DatosEditarContrato) => {
+      const { data, error } = await supabase.rpc("editar_contrato", {
+        p_contrato_id: d.contratoId,
+        p_monto_total: d.montoTotal,
+        p_monto_cuota: d.montoCuota,
+        p_frecuencia_pago: d.frecuencia,
+        p_fecha_inicio: d.fechaInicio,
+        p_fecha_fin: d.fechaFin ?? null,
+        p_duracion_meses: d.duracionMeses ?? null,
+        p_monto_lunes_sabado: d.montoLunesSabado ?? null,
+        p_monto_domingo: d.montoDomingo ?? null,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ["resumen-contrato", variables.contratoId] });
+      void queryClient.invalidateQueries({ queryKey: ["contratos"] });
+      void queryClient.invalidateQueries({ queryKey: ["kpis-dashboard"] });
+      void queryClient.invalidateQueries({ queryKey: ["clientes-en-mora"] });
+      void queryClient.invalidateQueries({ queryKey: ["buscar-contratos"] });
+    },
+  });
+}

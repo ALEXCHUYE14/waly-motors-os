@@ -24,9 +24,9 @@ import {
   ImageIcon,
   Share2,
   Download,
-  MessageCircle,
   MoreVertical,
   Trash2,
+  Pencil,
   X,
 } from "lucide-react";
 import { supabase, soles, type MetodoPago, type FrecuenciaPago } from "@/lib/supabase";
@@ -38,6 +38,18 @@ import {
 import { generarComprobantePago, compartirComprobante, type ResultadoComprobante } from "@/lib/comprobante";
 import { generarContratoPdf } from "@/lib/contrato-pdf";
 import { cn, urlFirmada, abrirWhatsApp, cargarAdjuntoGarantia, mensajeError } from "@/lib/utils";
+import { WhatsAppIcon } from "@/components/ui/whatsapp-icon";
+import { CalendarioPagos } from "@/components/ui/calendario-pagos";
+
+/** `fecha_pago` llega como timestamptz (ej. "2024-01-15T23:40:00+00:00")
+ *  — recortar los primeros 10 caracteres tomaría el día en UTC, que
+ *  puede ser el día SIGUIENTE al real en hora de Perú para un pago hecho
+ *  de noche. Se arma la fecha en hora LOCAL del navegador (igual que
+ *  cualquier `toLocaleDateString("es-PE")` ya usado en este archivo). */
+function fechaLocalISO(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 // ── Tipos ────────────────────────────────────────────────────
 interface ResumenContrato {
@@ -61,6 +73,12 @@ interface ResumenContrato {
    *  en `total_pagado` (se insertó como fila real en `pagos`), este
    *  campo es solo para mostrarlo por separado si hace falta. */
   pagos_previos_acumulados: number;
+  /** Misma fórmula exacta que `obtener_clientes_en_mora` (migración
+   *  00023) — nunca se recalcula por separado en el frontend, para que
+   *  el calendario de pagos y la lista de mora del dashboard jamás
+   *  muestren un número distinto para el mismo contrato. */
+  proximo_vencimiento: string;
+  dias_retraso: number;
   total_pagado: number;
   saldo: number;
   pct_avance: number;
@@ -177,6 +195,7 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
   const [avisoContrato, setAvisoContrato] = useState<string | null>(null);
 
   const r = resumen.data;
+  const fechasConPago = new Set((pagos.data ?? []).map((p) => fechaLocalISO(p.fecha_pago)));
 
   function confirmarFinalizacion(motivo: MotivoFinalizacion) {
     setErrorFinalizar(null);
@@ -362,26 +381,41 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
         <h1 className="flex items-center gap-2 text-lg font-black uppercase tracking-tight text-grafito">
           <FileSignature className="h-5 w-5 text-cobre" /> Contrato
         </h1>
-        {r && (
-          <span
-            className={cn(
-              "rounded-lg px-2.5 py-1 text-xs font-bold",
-              r.estado === "activo"
-                ? "bg-emerald-500/15 text-emerald-600"
+        <div className="flex items-center gap-2">
+          {r && (
+            <span
+              className={cn(
+                "rounded-lg px-2.5 py-1 text-xs font-bold",
+                r.estado === "activo"
+                  ? "bg-emerald-500/15 text-emerald-600"
+                  : r.estado === "vencido"
+                    ? "bg-oxido/15 text-oxido"
+                    : "bg-grafito/10 text-grafito/60",
+              )}
+            >
+              {r.estado === "activo"
+                ? "Activo"
                 : r.estado === "vencido"
-                  ? "bg-oxido/15 text-oxido"
-                  : "bg-grafito/10 text-grafito/60",
-            )}
-          >
-            {r.estado === "activo"
-              ? "Activo"
-              : r.estado === "vencido"
-                ? "Vencido"
-                : r.motivo_finalizacion === "incumplimiento"
-                  ? "Finalizado — incumplimiento"
-                  : "Finalizado"}
-          </span>
-        )}
+                  ? "Vencido"
+                  : r.motivo_finalizacion === "incumplimiento"
+                    ? "Finalizado — incumplimiento"
+                    : "Finalizado"}
+            </span>
+          )}
+          {/* Solo si no está finalizado — el registro histórico no se
+              edita (ver useEditarContrato / migración 00023). */}
+          {r && r.estado !== "finalizado" && (
+            <button
+              type="button"
+              onClick={() => router.push(`/contratos/${contratoId}/editar`)}
+              aria-label="Editar contrato"
+              title="Editar contrato"
+              className="grid h-8 w-8 place-items-center rounded-lg text-grafito/40 hover:bg-fondo"
+            >
+              <Pencil className="h-4 w-4" />
+            </button>
+          )}
+        </div>
       </header>
 
       {/* ── Acciones del contrato ── */}
@@ -400,9 +434,9 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
               type="button"
               onClick={() => void enviarContratoWhatsApp()}
               disabled={generandoContrato}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-cobre bg-cobre/10 py-3 text-sm font-bold text-cobre active:scale-[0.98] disabled:opacity-50"
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-whatsapp/30 bg-whatsapp/5 py-3 text-sm font-bold text-whatsapp active:scale-[0.98] disabled:opacity-50"
             >
-              <MessageCircle className="h-4 w-4" /> {generandoContrato ? "Generando…" : "Enviar por WhatsApp"}
+              <WhatsAppIcon className="h-4 w-4" /> {generandoContrato ? "Generando…" : "Enviar por WhatsApp"}
             </button>
           </div>
           {avisoContrato && <p className="text-xs text-grafito/50">{avisoContrato}</p>}
@@ -469,6 +503,25 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
         <p className="rounded-2xl bg-oxido/10 p-4 text-sm text-oxido">
           No se pudo cargar el contrato.
         </p>
+      )}
+
+      {/* ── Calendario de pagos ── */}
+      {r && (
+        <section aria-label="Calendario de pagos" className="space-y-2">
+          <h2 className="text-sm font-black uppercase tracking-widest text-grafito/40">
+            Calendario de pagos
+          </h2>
+          <CalendarioPagos
+            fechasConPago={fechasConPago}
+            inicioMora={r.dias_retraso > 0 ? r.proximo_vencimiento : null}
+          />
+          {r.dias_retraso > 0 && (
+            <p className="text-xs font-medium text-oxido">
+              {r.dias_retraso} {r.dias_retraso === 1 ? "día" : "días"} de retraso desde el{" "}
+              {new Date(`${r.proximo_vencimiento}T12:00:00`).toLocaleDateString("es-PE")}.
+            </p>
+          )}
+        </section>
       )}
 
       {/* ── Historial de pagos ── */}
@@ -742,7 +795,7 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
                 disabled={generandoContrato}
                 className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold text-grafito hover:bg-fondo disabled:opacity-50"
               >
-                <MessageCircle className="h-4 w-4 text-grafito/50" /> Enviar contrato por WhatsApp
+                <WhatsAppIcon className="h-4 w-4 text-whatsapp" /> Enviar contrato por WhatsApp
               </button>
             </motion.div>
           </motion.div>

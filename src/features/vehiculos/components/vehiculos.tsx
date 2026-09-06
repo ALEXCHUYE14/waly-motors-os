@@ -352,11 +352,14 @@ export function FormularioVehiculo({ id }: { id?: string }) {
       ) : (
         <>
           {/* Galería */}
+          {/* Sin `capture`: con ese atributo el navegador salta directo a la
+              cámara en algunos móviles/tablets, sin dar la opción de elegir
+              una foto ya existente de la galería. Sin él, el selector nativo
+              ofrece ambas opciones (cámara o galería) — el asesor elige. */}
           <input
             ref={inputFotos}
             type="file"
             accept="image/*"
-            capture="environment"
             multiple
             onChange={(e) => void agregarFotos(e)}
             className="sr-only"

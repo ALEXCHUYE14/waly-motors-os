@@ -515,15 +515,16 @@ export default function RegistroExpress() {
         {/* ══════════ PASO 3: EVIDENCIA Y CONFIRMAR ══════════ */}
         {paso === 3 && seleccion && (
           <motion.section key="p3" {...slide} aria-label="Evidencia y confirmación" className="space-y-5">
-            {/* Cámara nativa */}
+            {/* Sin `capture`: el selector nativo ofrece cámara Y galería —
+                el comprobante puede ser una captura de pantalla ya guardada
+                (Yape/Plin), no siempre una foto tomada en el momento. */}
             <input
               ref={inputCamara}
               type="file"
               accept="image/*"
-              capture="environment"
               onChange={(e) => void onFotoCapturada(e)}
               className="sr-only"
-              aria-label="Capturar foto del comprobante"
+              aria-label="Adjuntar foto del comprobante"
             />
             <button
               type="button"
@@ -539,7 +540,7 @@ export default function RegistroExpress() {
               ) : (
                 <span className="flex flex-col items-center gap-2 text-sm font-semibold">
                   <Camera className="h-8 w-8" />
-                  Tomar foto del comprobante
+                  Tomar foto o elegir de galería
                   <span className="text-xs font-normal">
                     {metodo === "efectivo"
                       ? "Opcional para efectivo"
@@ -556,7 +557,7 @@ export default function RegistroExpress() {
                 onClick={() => inputCamara.current?.click()}
                 className="w-full rounded-xl border border-borde py-2.5 text-sm font-semibold text-grafito"
               >
-                Volver a tomar
+                Cambiar foto
               </button>
             )}
 

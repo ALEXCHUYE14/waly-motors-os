@@ -270,8 +270,10 @@ export async function generarContratoPdf(d: DatosContratoPdf): Promise<jsPDF> {
 
   // ── III. Condiciones económicas ──────────────────────────────
   titulo("III. CONDICIONES ECONÓMICAS");
+  // Pedido explícito: el "Monto total" no se muestra en esta tabla
+  // orientada al cliente (sí sigue en la cláusula SEGUNDO de la sección
+  // IV, que es el texto legal formal del acuerdo — ese no se toca).
   filaDatos([
-    ["Monto total", soles.format(d.montoTotal)],
     ["Cuota inicial", soles.format(d.cuotaInicial || 0)],
     ["Monto por cuota", soles.format(d.montoCuota)],
     ["Frecuencia de pago", LABEL_FRECUENCIA[d.frecuenciaPago]],

@@ -206,18 +206,24 @@ export default function NuevoContrato() {
     }
   }
 
-  // El campo "Monto total" (mismo estado que usa el modo manual) se
-  // mantiene sincronizado con el resultado automático — así el resto del
-  // formulario (validación, resumen, payload a la RPC) no duplica NINGUNA
-  // lógica: siempre lee `montoTotal`/`nTotal` tal cual, sin importar el
-  // modo. Se declara antes del `return` anticipado de la pantalla de
-  // éxito, junto a los demás hooks (regla de hooks de React).
+  // Los campos "Monto total" y "Monto por cuota" (mismos estados que usa
+  // el modo manual) se mantienen sincronizados con el resultado
+  // automático — así el resto del formulario (validación, resumen,
+  // payload a la RPC) no duplica NINGUNA lógica: siempre lee
+  // `montoTotal`/`montoCuota` tal cual, sin importar el modo. Ya no se
+  // piden a mano en automático (pedido explícito): "Monto total" sale de
+  // la proyección por tarifa diaria, y "Monto por cuota" toma la tarifa
+  // Lunes-Sábado como referencia de mora (el domingo se cobra aparte, a
+  // su propia tarifa, más baja). Se declara antes del `return`
+  // anticipado de la pantalla de éxito, junto a los demás hooks (regla
+  // de hooks de React).
   useEffect(() => {
     if (modoAutomaticoActivo && calculoAutomatico) {
       setMontoTotal(String(calculoAutomatico.montoTotal));
+      setMontoCuota(tarifaLunSab);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modoAutomaticoActivo, calculoAutomatico?.montoTotal]);
+  }, [modoAutomaticoActivo, calculoAutomatico?.montoTotal, tarifaLunSab]);
 
   // "Monto Total Ya Pagado" — 100% derivado (solo lectura), se recalcula
   // en cada render a partir de fecha de inicio + meses/días + tarifas.
@@ -662,27 +668,28 @@ export default function NuevoContrato() {
               </div>
             )}
 
-            {/* Montos */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">
-                <label htmlFor="total" className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40">
-                  Monto total del contrato (S/.)
-                  {modoTotal === "automatico" && esVentaCredito && " — calculado automáticamente"}
-                </label>
-                <input
-                  id="total"
-                  type="number"
-                  inputMode="decimal"
-                  min="0"
-                  readOnly={modoTotal === "automatico" && esVentaCredito}
-                  value={montoTotal}
-                  onChange={(e) => setMontoTotal(e.target.value)}
-                  className={cn(
-                    "mt-1 w-full rounded-2xl border border-borde px-4 py-3 text-xl font-black tabular-nums text-grafito focus-visible:outline-2 focus-visible:outline-amarillo",
-                    modoTotal === "automatico" && esVentaCredito ? "bg-borde/30" : "bg-tarjeta",
-                  )}
-                />
-              </div>
+            {/* Montos — en modo automático, "Monto total" y "Monto por
+                cuota" ya no se piden a mano (pedido explícito): la
+                proyección por tarifa diaria de la tarjeta de arriba ya
+                los resuelve. Solo queda "Cuota inicial", que sigue
+                siendo un cobro real de hoy, independiente del cálculo. */}
+            <div className={cn("grid gap-3", modoAutomaticoActivo ? "grid-cols-1" : "grid-cols-2")}>
+              {!modoAutomaticoActivo && (
+                <div className="col-span-2">
+                  <label htmlFor="total" className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40">
+                    Monto total del contrato (S/.)
+                  </label>
+                  <input
+                    id="total"
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    value={montoTotal}
+                    onChange={(e) => setMontoTotal(e.target.value)}
+                    className="mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-3 text-xl font-black tabular-nums text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
+                  />
+                </div>
+              )}
               <div>
                 <label htmlFor="inicial" className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40">
                   Cuota inicial
@@ -697,21 +704,30 @@ export default function NuevoContrato() {
                   className="mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-3 font-bold tabular-nums text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
                 />
               </div>
-              <div>
-                <label htmlFor="cuota" className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40">
-                  Monto por cuota
-                </label>
-                <input
-                  id="cuota"
-                  type="number"
-                  inputMode="decimal"
-                  min="0"
-                  value={montoCuota}
-                  onChange={(e) => setMontoCuota(e.target.value)}
-                  className="mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-3 font-bold tabular-nums text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
-                />
-              </div>
+              {!modoAutomaticoActivo && (
+                <div>
+                  <label htmlFor="cuota" className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40">
+                    Monto por cuota
+                  </label>
+                  <input
+                    id="cuota"
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    value={montoCuota}
+                    onChange={(e) => setMontoCuota(e.target.value)}
+                    className="mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-3 font-bold tabular-nums text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
+                  />
+                </div>
+              )}
             </div>
+            {modoAutomaticoActivo && (
+              <p className="text-xs text-grafito/50">
+                El monto total y el monto por cuota ya quedaron fijados por la tarifa diaria (arriba) — el
+                monto por cuota (referencia para calcular mora) toma la tarifa Lunes–Sábado; el domingo se
+                cobra aparte, a su propia tarifa.
+              </p>
+            )}
 
             {/* Frecuencia */}
             <fieldset>

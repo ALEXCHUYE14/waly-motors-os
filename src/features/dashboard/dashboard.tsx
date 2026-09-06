@@ -14,7 +14,6 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  MessageCircle,
   TriangleAlert,
   Wallet,
   Bike,
@@ -31,6 +30,7 @@ import {
   type KpisDashboard,
 } from "@/lib/supabase";
 import { cn, urlFirmadas, abrirWhatsApp } from "@/lib/utils";
+import { WhatsAppIcon } from "@/components/ui/whatsapp-icon";
 
 // ── Data hooks ───────────────────────────────────────────────
 function useKpis() {
@@ -198,7 +198,7 @@ function ModalWhatsApp({
               "disabled:cursor-not-allowed disabled:opacity-40",
             )}
           >
-            <MessageCircle className="h-4 w-4" />
+            <WhatsAppIcon className="h-4 w-4" />
             {cliente.telefono ? "Abrir WhatsApp" : "Sin teléfono registrado"}
           </button>
         </div>
@@ -250,7 +250,7 @@ function TarjetaMora({
         aria-label={`Notificar a ${cliente.nombre_completo} por WhatsApp`}
         className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-whatsapp/15 text-whatsapp active:scale-95"
       >
-        <MessageCircle className="h-5 w-5" strokeWidth={2.5} />
+        <WhatsAppIcon className="h-5 w-5" />
       </button>
     </li>
   );

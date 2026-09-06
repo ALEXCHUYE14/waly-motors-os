@@ -10,13 +10,13 @@ import {
   Eye,
   EyeOff,
   Loader2,
-  MessageCircle,
   Users,
   Wallet,
   Bike,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { abrirWhatsApp } from "@/lib/utils";
+import { WhatsAppIcon } from "@/components/ui/whatsapp-icon";
 
 // Número de soporte — se pasa a abrirWhatsApp, que ya limpia el formato.
 const WHATSAPP_SOPORTE = "+51924996961";
@@ -182,7 +182,7 @@ export default function LoginPage() {
               onClick={contactarSoporte}
               className="flex w-full items-center justify-center gap-2 rounded-xl border border-whatsapp/30 bg-whatsapp/5 py-3 text-sm font-bold text-whatsapp active:scale-[0.98]"
             >
-              <MessageCircle className="h-4 w-4" /> Contactar con soporte
+              <WhatsAppIcon className="h-4 w-4" /> Contactar con soporte
             </button>
           </motion.form>
 

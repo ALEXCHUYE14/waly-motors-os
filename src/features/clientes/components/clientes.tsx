@@ -320,15 +320,15 @@ export function FormularioCliente({ id }: { id?: string }) {
         {id ? "Editar cliente" : "Nuevo cliente"}
       </h1>
 
-      {/* Foto perfil / documento */}
+      {/* Foto perfil / documento — sin `capture`: así el selector nativo
+          ofrece cámara Y galería, en vez de saltar directo a la cámara. */}
       <input
         ref={inputFoto}
         type="file"
         accept="image/*"
-        capture="environment"
         onChange={(e) => void onFoto(e)}
         className="sr-only"
-        aria-label="Capturar foto del cliente o su documento"
+        aria-label="Foto del cliente o su documento — cámara o galería"
       />
       <button
         type="button"
@@ -345,7 +345,7 @@ export function FormularioCliente({ id }: { id?: string }) {
         )}
       </button>
       <p className="text-center text-xs text-grafito/50">
-        Toca para tomar la foto del cliente o de su {tipoDoc}.
+        Toca para tomar una foto o elegir de la galería — del cliente o de su {tipoDoc}.
       </p>
 
       {/* Documento */}

@@ -376,8 +376,23 @@ export default function EditarContrato({ contratoId }: { contratoId: string }) {
         </div>
       </fieldset>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div>
+      {/* `grid-cols-1 sm:grid-cols-2` (a diferencia del grid fijo de
+          tarifas, que nunca apila): un `<input type="date">` trae su
+          propio ícono de calendario + "DD/MM/AAAA" nativo del sistema
+          operativo, con un ancho mínimo que un grid NO encoge por
+          defecto (`min-width: auto` en un hijo de grid) — a diferencia
+          de un `<input type="number">` (tarifas), que sí se achica sin
+          problema. En un teléfono angosto, esa columna de 2 no le
+          alcanza al widget nativo y se monta sobre la columna vecina.
+          `min-w-0` en cada celda es la red de seguridad (permite que el
+          grid SÍ la encoja si hiciera falta); apilar en columna única
+          por debajo de `sm:` evita el problema de raíz en el caso real
+          — un celular — y solo pasa a 2 columnas en pantallas con
+          espacio de sobra (tablet/escritorio). El estilo de cada label
+          + input es exactamente el mismo que el de las tarifas
+          Lunes–Sábado / Domingo (mismas clases `etiqueta`/`campo`). */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="min-w-0">
           <label htmlFor="inicio-e" className={etiqueta}>
             Fecha de inicio
           </label>
@@ -389,7 +404,7 @@ export default function EditarContrato({ contratoId }: { contratoId: string }) {
             className={campo}
           />
         </div>
-        <div>
+        <div className="min-w-0">
           <label htmlFor="fin-e" className={etiqueta}>
             Fecha de fin {modoAutomaticoActivo && "(automática)"}
           </label>

@@ -376,22 +376,23 @@ export default function EditarContrato({ contratoId }: { contratoId: string }) {
         </div>
       </fieldset>
 
-      {/* `grid-cols-1 sm:grid-cols-2` (a diferencia del grid fijo de
-          tarifas, que nunca apila): un `<input type="date">` trae su
-          propio ícono de calendario + "DD/MM/AAAA" nativo del sistema
-          operativo, con un ancho mínimo que un grid NO encoge por
-          defecto (`min-width: auto` en un hijo de grid) — a diferencia
-          de un `<input type="number">` (tarifas), que sí se achica sin
-          problema. En un teléfono angosto, esa columna de 2 no le
-          alcanza al widget nativo y se monta sobre la columna vecina.
-          `min-w-0` en cada celda es la red de seguridad (permite que el
-          grid SÍ la encoja si hiciera falta); apilar en columna única
-          por debajo de `sm:` evita el problema de raíz en el caso real
-          — un celular — y solo pasa a 2 columnas en pantallas con
-          espacio de sobra (tablet/escritorio). El estilo de cada label
-          + input es exactamente el mismo que el de las tarifas
-          Lunes–Sábado / Domingo (mismas clases `etiqueta`/`campo`). */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {/* Mismo grid fijo de 2 columnas que TODOS los demás pares de
+          botones/campos de esta pantalla (tipo de cálculo, frecuencia,
+          tarifas Lunes–Sábado/Domingo) — apilarlo en 1 columna en el
+          celular (como se probó antes) los dejaba de ancho completo
+          mientras el resto de filas seguía en 2 columnas, y entonces SÍ
+          se veían más largos y desalineados que el resto.
+          El problema real nunca fue el número de columnas: es que
+          `<input type="date">` trae su propio ícono de calendario +
+          "DD/MM/AAAA" nativo del sistema operativo, con un ancho mínimo
+          que un grid NO encoge por defecto (`min-width: auto` en un hijo
+          de grid) — a diferencia de un `<input type="number">`
+          (tarifas), que sí se achica sin problema. `min-w-0` en cada
+          celda es la corrección real: deja que el grid SÍ encoja el
+          input a su columna en vez de desbordarse sobre la vecina,
+          manteniendo el mismo ancho de columna que cualquier otra fila
+          de 2 botones de la pantalla. */}
+      <div className="grid grid-cols-2 gap-3">
         <div className="min-w-0">
           <label htmlFor="inicio-e" className={etiqueta}>
             Fecha de inicio

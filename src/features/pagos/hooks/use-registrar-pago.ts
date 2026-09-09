@@ -25,10 +25,13 @@ export interface NuevoCobro {
   metodo: MetodoPago;
   evidencia: File | null;
   observaciones?: string;
-  /** Solo para "Abono adicional" (pago migrado de un registro en papel):
-   *  fecha real en que se recibió el pago, ISO. Si no se manda, la RPC
-   *  usa la fecha/hora actual (comportamiento de siempre para un cobro
-   *  en calle). */
+  /** Fecha real que cubre este pago, ISO — para "Abono adicional" (pago
+   *  migrado de un registro en papel) y para cualquier cobro en vivo a
+   *  un cliente con días de atraso, donde el cajero marca qué día del
+   *  cronograma está cancelando en vez de asumir "ahora" (ver
+   *  registro-express.tsx). Si no se manda, la RPC usa la fecha/hora
+   *  actual — comportamiento de siempre para un cobro puntual sin
+   *  atraso. */
   fechaPago?: string;
 }
 

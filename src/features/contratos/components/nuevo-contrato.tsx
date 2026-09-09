@@ -282,20 +282,17 @@ export default function NuevoContrato() {
   const totalYaPagado = nInicial + nPagosPrevios;
 
   // Con la migración de histórico activa: los datos de meses/días deben
-  // ser válidos (sin error de cálculo — incluye la validación de fecha
-  // futura, ver calculo-credito.ts), el tiempo ya pagado no puede
-  // superar la duración total del contrato (si se conoce, modo
-  // automático) y lo ya pagado no puede superar el monto total (dinero
-  // que nunca existió).
+  // ser válidos y el cálculo debe haber podido resolverse (nunca falla
+  // por sí solo, ver calculo-credito.ts — solo por datos de entrada
+  // realmente inválidos, ya cubiertos por `mesesDiasEntradaValida` y
+  // `tarifasValidas`). Si el tiempo ya pagado proyecta más allá de hoy
+  // (`ajustadoAHoy`) o más allá de la duración total del contrato (modo
+  // automático), NO se bloquea "Continuar" — el cálculo ya se recortó
+  // automáticamente y la pantalla avisa aparte (ver más abajo): un dato
+  // de entrada dudoso nunca debe impedir armar y guardar el contrato.
   const migracionValida =
     !migrarHistorico ||
-    (mesesDiasEntradaValida &&
-      tarifasValidas &&
-      calculoPagosPrevios !== null &&
-      !errorPagosPrevios &&
-      (!modoAutomaticoActivo ||
-        !calculoAutomatico ||
-        calculoPagosPrevios.fechaHasta <= calculoAutomatico.fechaFin));
+    (mesesDiasEntradaValida && tarifasValidas && calculoPagosPrevios !== null && !errorPagosPrevios);
 
   const condicionesValidas =
     (!esVentaCredito || modoTotal === "manual" || (calculoAutomatico !== null && !errorCalculoAutomatico)) &&
@@ -889,11 +886,26 @@ export default function NuevoContrato() {
                       se usa así para el cálculo.
                     </p>
                   )}
-                  {modoAutomaticoActivo && calculoAutomatico && calculoPagosPrevios &&
+                  {/* Avisos informativos — nunca bloquean "Continuar": el
+                      cálculo ya se recorta solo (ver calculo-credito.ts),
+                      esto es para que el asesor revise si el dato de
+                      entrada (Fecha de Inicio o meses/días) fue el
+                      correcto. */}
+                  {calculoPagosPrevios?.ajustadoAHoy && (
+                    <p className="text-xs font-medium text-oxido">
+                      {mesesNormalizados} mes(es) y {diasNormalizados} día(s) desde el{" "}
+                      {new Date(`${fechaInicio}T12:00:00`).toLocaleDateString("es-PE")} proyectan al{" "}
+                      {new Date(`${calculoPagosPrevios.fechaProyectada}T12:00:00`).toLocaleDateString("es-PE")}
+                      , una fecha futura. Se calculó el monto solo hasta hoy — revisa la Fecha de Inicio o
+                      el tiempo ya pagado si no es correcto.
+                    </p>
+                  )}
+                  {!calculoPagosPrevios?.ajustadoAHoy && modoAutomaticoActivo && calculoAutomatico && calculoPagosPrevios &&
                     calculoPagosPrevios.fechaHasta > calculoAutomatico.fechaFin && (
                       <p className="text-xs font-medium text-oxido">
-                        El tiempo ya pagado no puede superar la duración total del contrato ({duracionMeses}{" "}
-                        meses, hasta el {new Date(`${calculoAutomatico.fechaFin}T12:00:00`).toLocaleDateString("es-PE")}).
+                        El tiempo ya pagado supera la duración total del contrato ({duracionMeses} meses,
+                        hasta el {new Date(`${calculoAutomatico.fechaFin}T12:00:00`).toLocaleDateString("es-PE")}) —
+                        revisa los datos antes de confirmar.
                       </p>
                   )}
 

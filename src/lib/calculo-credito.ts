@@ -167,7 +167,20 @@ export function calcularMontoTotalPorTarifaDiaria(
 
 // ── Monto ya pagado (migración de cuaderno, meses + días) ────
 export interface ResultadoAcumulado extends ConteoDias {
+  /** Fecha hasta la que el cliente quedó al día — nunca posterior a hoy
+   *  (ver `ajustadoAHoy`): es la fecha real usada para contar días y
+   *  calcular `montoTotal`. */
   fechaHasta: string;
+  /** `fechaInicio + meses/días ya pagados` SIN limitar a hoy — igual a
+   *  `fechaHasta` salvo cuando `ajustadoAHoy` es `true`, en cuyo caso
+   *  queda por delante de `fechaHasta` (informativo, para que la
+   *  pantalla pueda explicarle al asesor qué se recortó y por qué). */
+  fechaProyectada: string;
+  /** `true` cuando `fechaInicio` + meses/días ya pagados proyecta más
+   *  allá de hoy (dato de entrada probablemente equivocado: Fecha de
+   *  Inicio sin corregir, o meses/días de más). El cálculo NUNCA se
+   *  bloquea por esto — se recorta a hoy (`fechaHasta`) y se avisa. */
+  ajustadoAHoy: boolean;
   montoTotal: number;
 }
 
@@ -192,7 +205,11 @@ function hoyISO(): string {
  * Calcula cuánto representa, en soles, un tiempo YA PAGADO expresado en
  * meses + días sueltos (ej. "3 meses y 12 días") — usado al migrar un
  * cliente con pagos hechos en cuaderno antes de registrarse en el
- * sistema (ver migración 00021/00022).
+ * sistema (ver migración 00021/00022). El origen del cálculo es SIEMPRE
+ * `fechaInicioISO` — la Fecha de Inicio del Contrato — nunca la fecha de
+ * hoy ni ninguna otra: es el mismo dato que ya define el resto del
+ * contrato (cronograma, PDF), así que "tiempo ya pagado" siempre cuenta
+ * hacia adelante desde ahí.
  *
  * Secuencia exacta:
  *   1) Normaliza días ≥ 30 a meses completos (`normalizarMesesDias`).
@@ -202,9 +219,16 @@ function hoyISO(): string {
  *      Lunes-Sábado vs. Domingo, y multiplica por cada tarifa.
  *
  * Lanza un error legible (nunca un NaN ni una fecha absurda silenciosa)
- * si: meses o días son negativos, las tarifas no son > 0, o el tiempo ya
- * pagado proyecta una fecha futura (no se puede haber pagado ya algo que
- * todavía no ocurrió).
+ * únicamente por datos de ENTRADA inválidos: meses o días negativos/no
+ * enteros, o tarifas que no son > 0 — nunca por el RESULTADO de la
+ * proyección. Si `fechaInicio` + meses/días ya pagados cae justo en hoy
+ * o antes, se usa tal cual. Si cae DESPUÉS de hoy (Fecha de Inicio sin
+ * corregir, o meses/días de más — un dato de entrada probablemente
+ * equivocado, pero no algo que deba trabar el formulario), el cálculo
+ * NUNCA falla ni deja el campo vacío: se recorta a hoy (`fechaHasta`,
+ * usado para el monto) y se marca `ajustadoAHoy = true` junto con la
+ * fecha sin recortar (`fechaProyectada`) para que la pantalla avise sin
+ * bloquear ni "Continuar" ni "Guardar".
  */
 export function calcularMontoAcumuladoPorTiempoPagado(
   fechaInicioISO: string,
@@ -227,14 +251,17 @@ export function calcularMontoAcumuladoPorTiempoPagado(
   }
 
   const normalizado = normalizarMesesDias(meses, dias);
-  const fechaHasta = sumarMesesYDias(fechaInicioISO, normalizado.meses, normalizado.dias);
+  const fechaProyectada = sumarMesesYDias(fechaInicioISO, normalizado.meses, normalizado.dias);
+  const hoy = hoyISO();
+  const ajustadoAHoy = fechaProyectada > hoy;
+  const fechaHasta = ajustadoAHoy ? hoy : fechaProyectada;
 
-  if (fechaHasta > hoyISO()) {
-    throw new Error("El tiempo ya pagado no puede proyectarse a una fecha futura.");
-  }
-
+  // Si `fechaInicioISO` mismo quedó en el futuro (Fecha de Inicio mal
+  // puesta), el rango [fechaInicio, fechaHasta) queda vacío o invertido —
+  // `contarDiasPorTipo` ya devuelve 0/0 en ese caso (su `while` nunca
+  // arranca), nunca un conteo negativo ni un error.
   const { diasLunesSabado, diasDomingo } = contarDiasPorTipo(fechaInicioISO, fechaHasta);
   const montoTotal = redondear2(diasLunesSabado * tarifaLunesSabado + diasDomingo * tarifaDomingo);
 
-  return { fechaHasta, diasLunesSabado, diasDomingo, montoTotal };
+  return { fechaHasta, fechaProyectada, ajustadoAHoy, diasLunesSabado, diasDomingo, montoTotal };
 }

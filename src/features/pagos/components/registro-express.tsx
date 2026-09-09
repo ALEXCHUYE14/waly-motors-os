@@ -49,6 +49,14 @@ interface ResultadoBusqueda {
   monto_cuota: number;
   frecuencia_pago: string;
   dias_retraso: number;
+  /** Fecha `YYYY-MM-DD` de la cuota más antigua vencida sin pagar, o
+   *  `null` si el contrato está al día (ver migración 00026 — misma
+   *  fórmula exacta que ya usan `obtener_clientes_en_mora` y
+   *  `resumen_contrato`, nunca se recalcula aparte). Es el valor por
+   *  defecto del selector de "fecha que cubre este pago" cuando el
+   *  cliente tiene atraso: así un cobro amortiza el día más antiguo
+   *  pendiente primero, no siempre "hoy". */
+  proximo_vencimiento: string | null;
 }
 
 // Canales de cobro en vivo — se muestran en la grilla del paso 2.
@@ -146,10 +154,14 @@ export default function RegistroExpress() {
   const [seleccion, setSeleccion] = useState<ResultadoBusqueda | null>(null);
   const [monto, setMonto] = useState("");
   const [metodo, setMetodo] = useState<MetodoPago>("yape");
-  // Solo se usa cuando metodo === "abono_adicional": la fecha real en que
-  // Waly recibió el pago según su cuaderno (no la de hoy, que es cuando
-  // recién lo está digitando en el sistema).
-  const [fechaAbono, setFechaAbono] = useState(() => new Date().toISOString().slice(0, 10));
+  // Fecha que cubre este pago — nunca se asume "hoy" a ciegas en dos
+  // casos: "Abono adicional" (fecha real del cuaderno) y cualquier cobro
+  // en vivo a un cliente con días de atraso (para que amortice el día
+  // más antiguo pendiente, no reinicie la mora completa con la fecha de
+  // hoy sin importar cuántos días cubre el monto recibido). Se
+  // reinicializa a `proximo_vencimiento` del contrato elegido — o a hoy
+  // si está al día — en `seleccionarContrato`, más abajo.
+  const [fechaCobertura, setFechaCobertura] = useState(() => new Date().toISOString().slice(0, 10));
   const [evidencia, setEvidencia] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
@@ -165,9 +177,15 @@ export default function RegistroExpress() {
   const montoValido = Number.isFinite(montoNum) && montoNum > 0;
   const esAbono = metodo === "abono_adicional";
   const hoyISO = new Date().toISOString().slice(0, 10);
-  // Solo importa cuando esAbono: nunca se permite una fecha futura (el
-  // pago ya ocurrió, es un registro histórico) ni una vacía.
-  const fechaAbonoValida = !esAbono || (fechaAbono !== "" && fechaAbono <= hoyISO);
+  // El selector de fecha se muestra para "Abono adicional" (siempre,
+  // aunque el contrato esté al día: es justamente para migrar pagos
+  // pasados) y para cualquier cobro en vivo a un cliente con atraso
+  // (para poder marcar qué día del cronograma cubre, en vez de asumir
+  // "hoy" ciegamente — ver comentario en `fechaCobertura` arriba).
+  const mostrarSelectorFecha = esAbono || (seleccion?.dias_retraso ?? 0) > 0;
+  // Nunca se permite una fecha futura (el pago ya ocurrió) ni una vacía.
+  const fechaCoberturaValida =
+    !mostrarSelectorFecha || (fechaCobertura !== "" && fechaCobertura <= hoyISO);
 
   // Limpieza del object URL del preview
   useEffect(() => {
@@ -190,7 +208,7 @@ export default function RegistroExpress() {
   }
 
   function confirmarCobro() {
-    if (!seleccion || !montoValido || !fechaAbonoValida) return;
+    if (!seleccion || !montoValido || !fechaCoberturaValida) return;
     registrar.mutate({
       contratoId: seleccion.contrato_id,
       monto: montoNum,
@@ -199,7 +217,7 @@ export default function RegistroExpress() {
       // El mediodía evita que, al convertir a UTC, la fecha elegida se
       // corra al día anterior/siguiente según la zona horaria del
       // dispositivo — mismo criterio que el resto del sistema.
-      fechaPago: esAbono ? `${fechaAbono}T12:00:00` : undefined,
+      fechaPago: mostrarSelectorFecha ? `${fechaCobertura}T12:00:00` : undefined,
     });
   }
 
@@ -210,7 +228,7 @@ export default function RegistroExpress() {
     try {
       const doc = await generarComprobantePago({
         folio: `RE-${Date.now().toString(36).toUpperCase()}`,
-        fechaIso: esAbono ? `${fechaAbono}T12:00:00` : new Date().toISOString(),
+        fechaIso: mostrarSelectorFecha ? `${fechaCobertura}T12:00:00` : new Date().toISOString(),
         clienteNombre: seleccion.nombre_completo,
         clienteDocumento: seleccion.numero_documento,
         vehiculoPlaca: seleccion.placa,
@@ -239,10 +257,23 @@ export default function RegistroExpress() {
     setSeleccion(null);
     setMonto("");
     setMetodo("yape");
-    setFechaAbono(new Date().toISOString().slice(0, 10));
+    setFechaCobertura(new Date().toISOString().slice(0, 10));
     setEvidencia(null);
     setPreviewUrl(null);
     setEstadoComprobante(null);
+  }
+
+  /** Al elegir un contrato en el paso 1: si está atrasado, la fecha que
+   *  cubre el pago arranca en el día más antiguo pendiente
+   *  (`proximo_vencimiento`) — no en hoy — para que el cronograma se
+   *  amortice en orden cronológico por defecto. El asesor la puede
+   *  cambiar igual (varios días atrasados, por ejemplo). Si el contrato
+   *  está al día, queda en hoy (comportamiento de siempre). */
+  function seleccionarContrato(r: ResultadoBusqueda) {
+    setSeleccion(r);
+    setMonto(String(r.monto_cuota));
+    setFechaCobertura(r.dias_retraso > 0 && r.proximo_vencimiento ? r.proximo_vencimiento : hoyISO);
+    setPaso(2);
   }
 
   // ── Pantalla de éxito / encolado offline ───────────────────
@@ -358,11 +389,7 @@ export default function RegistroExpress() {
                 <li key={r.contrato_id}>
                   <button
                     type="button"
-                    onClick={() => {
-                      setSeleccion(r);
-                      setMonto(String(r.monto_cuota));
-                      setPaso(2);
-                    }}
+                    onClick={() => seleccionarContrato(r)}
                     className="flex w-full items-center gap-3 rounded-2xl border border-borde bg-tarjeta p-3 text-left shadow-card active:scale-[0.99]"
                   >
                     <span className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-fondo">
@@ -477,25 +504,34 @@ export default function RegistroExpress() {
                 <BookOpen className="h-4 w-4" /> Abono adicional (pago del cuaderno)
               </button>
 
-              {esAbono && (
+              {/* Se muestra para "Abono adicional" (migración de cuaderno)
+                  Y para cualquier cobro en vivo a un cliente atrasado —
+                  nunca se asume "hoy" a ciegas cuando eso rompería la
+                  secuencia del cronograma (ver `mostrarSelectorFecha`). */}
+              {mostrarSelectorFecha && (
                 <div className="mt-3">
                   <label
-                    htmlFor="fecha-abono"
+                    htmlFor="fecha-cobertura"
                     className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40"
                   >
-                    Fecha en que se recibió el pago
+                    {esAbono ? "Fecha en que se recibió el pago" : "Fecha que cubre este pago"}
                   </label>
                   <input
-                    id="fecha-abono"
+                    id="fecha-cobertura"
                     type="date"
                     max={hoyISO}
-                    value={fechaAbono}
-                    onChange={(e) => setFechaAbono(e.target.value)}
+                    value={fechaCobertura}
+                    onChange={(e) => setFechaCobertura(e.target.value)}
                     className="mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-3 text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
                   />
                   <p className="mt-1 text-xs text-grafito/50">
-                    Usa la fecha real del cuaderno, no la de hoy — así la mora y el historial del
-                    contrato quedan correctos.
+                    {esAbono
+                      ? "Usa la fecha real del cuaderno, no la de hoy — así la mora y el historial del contrato quedan correctos."
+                      : `${seleccion.dias_retraso} ${seleccion.dias_retraso === 1 ? "día" : "días"} de atraso desde el ${
+                          seleccion.proximo_vencimiento
+                            ? new Date(`${seleccion.proximo_vencimiento}T12:00:00`).toLocaleDateString("es-PE")
+                            : "—"
+                        }. Marca qué día del cronograma cubre este pago — no siempre "hoy", si cubre solo parte de los días atrasados.`}
                   </p>
                 </div>
               )}
@@ -503,7 +539,7 @@ export default function RegistroExpress() {
 
             <button
               type="button"
-              disabled={!montoValido || !fechaAbonoValida}
+              disabled={!montoValido || !fechaCoberturaValida}
               onClick={() => setPaso(3)}
               className="w-full rounded-xl bg-amarillo py-4 font-bold text-grafito active:scale-[0.98] disabled:opacity-40"
             >
@@ -568,8 +604,8 @@ export default function RegistroExpress() {
                 ["Placa", seleccion.placa],
                 ["Monto", soles.format(montoNum)],
                 ["Método", LABEL_METODO[metodo]],
-                ...(esAbono
-                  ? ([["Fecha del pago", new Date(`${fechaAbono}T12:00:00`).toLocaleDateString("es-PE")]] as [
+                ...(mostrarSelectorFecha
+                  ? ([["Fecha del pago", new Date(`${fechaCobertura}T12:00:00`).toLocaleDateString("es-PE")]] as [
                       string,
                       string,
                     ][])
@@ -591,7 +627,7 @@ export default function RegistroExpress() {
             <button
               type="button"
               onClick={confirmarCobro}
-              disabled={registrar.isPending || !fechaAbonoValida}
+              disabled={registrar.isPending || !fechaCoberturaValida}
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-amarillo py-4 font-bold text-grafito active:scale-[0.98] disabled:opacity-60"
             >
               {registrar.isPending ? (

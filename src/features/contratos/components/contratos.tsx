@@ -80,11 +80,13 @@ export function ListaContratos() {
       </div>
 
       {contratos.isLoading ? (
-        <div className="space-y-2">
-          {[0, 1, 2].map((i) => <div key={i} className="h-20 animate-pulse rounded-2xl bg-borde/60" />)}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="aspect-square animate-pulse rounded-2xl bg-borde/60" />
+          ))}
         </div>
       ) : contratos.data && contratos.data.length > 0 ? (
-        <ul className="space-y-2">
+        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {contratos.data.map((c) => (
             <TarjetaContrato key={c.id} contrato={c} onAbrir={() => router.push(`/contratos/${c.id}`)} />
           ))}
@@ -98,30 +100,42 @@ export function ListaContratos() {
   );
 }
 
+/** Tarjeta cuadrada (antes era una fila de lista): mismos datos y mismo
+ *  destino al tocarla (`onAbrir`), solo cambia la disposición visual —
+ *  ningún dato nuevo, ninguna lógica de negocio tocada. `aspect-square`
+ *  la mantiene cuadrada en cualquier ancho de pantalla; `line-clamp-2`
+ *  (nativo de Tailwind 3.4, sin plugin) evita que un nombre largo rompa
+ *  el cuadro en vez de recortarlo con puntos suspensivos. */
 function TarjetaContrato({ contrato: c, onAbrir }: { contrato: ContratoResumen; onAbrir: () => void }) {
   return (
     <li>
       <button
         type="button"
         onClick={onAbrir}
-        className="flex w-full items-center gap-3 rounded-2xl border border-borde bg-tarjeta p-3.5 text-left shadow-card active:scale-[0.99]"
+        className="flex aspect-square w-full flex-col rounded-2xl border border-borde bg-tarjeta p-4 text-left shadow-card active:scale-[0.97]"
       >
-        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-cobre/10 text-cobre">
-          {c.tipo === "alquiler" ? <KeyRound className="h-5 w-5" /> : <FileSignature className="h-5 w-5" />}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate font-semibold text-grafito">
+        <div className="flex w-full items-start justify-between gap-2">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-cobre/10 text-cobre">
+            {c.tipo === "alquiler" ? <KeyRound className="h-5 w-5" /> : <FileSignature className="h-5 w-5" />}
+          </span>
+          <span className={cn("shrink-0 rounded-lg px-2 py-1 text-[10px] font-bold", COLOR_ESTADO[c.estado])}>
+            {LABEL_ESTADO[c.estado]}
+          </span>
+        </div>
+
+        <div className="mt-auto min-w-0 space-y-1">
+          <p className="line-clamp-2 font-semibold leading-tight text-grafito">
             {c.clientes?.nombre_completo ?? "Cliente eliminado"}
-          </span>
-          <span className="block text-xs text-grafito/50">
+          </p>
+          <p className="truncate text-xs text-grafito/50">
             <span className="font-mono font-bold">{c.vehiculos?.placa ?? "—"}</span>
-            {c.vehiculos?.modelo && ` · ${c.vehiculos.modelo}`} · {soles.format(c.monto_cuota)}{" "}
-            {LABEL_FRECUENCIA[c.frecuencia_pago]}
-          </span>
-        </span>
-        <span className={cn("shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-bold", COLOR_ESTADO[c.estado])}>
-          {LABEL_ESTADO[c.estado]}
-        </span>
+            {c.vehiculos?.modelo && ` · ${c.vehiculos.modelo}`}
+          </p>
+          <p className="truncate text-xs font-bold text-grafito">
+            {soles.format(c.monto_cuota)}{" "}
+            <span className="font-normal text-grafito/50">{LABEL_FRECUENCIA[c.frecuencia_pago]}</span>
+          </p>
+        </div>
       </button>
     </li>
   );

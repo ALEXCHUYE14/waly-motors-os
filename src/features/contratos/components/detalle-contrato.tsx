@@ -33,6 +33,7 @@ import { supabase, soles, type MetodoPago, type FrecuenciaPago } from "@/lib/sup
 import {
   useFinalizarContrato,
   useEliminarContrato,
+  useEditarMontoPago,
   type MotivoFinalizacion,
 } from "@/features/contratos/hooks/use-contratos";
 import { generarComprobantePago, compartirComprobante, type ResultadoComprobante } from "@/lib/comprobante";
@@ -109,6 +110,12 @@ interface PagoContrato {
   estado: "completado" | "parcial" | "rechazado";
   evidencia_url: string | null;
   observaciones: string | null;
+  /** Monto con el que se cobró de verdad en calle antes de la primera
+   *  corrección — `null` si el pago nunca se editó (ver migración
+   *  00027). Se muestra aparte de `observaciones` para no romper la
+   *  etiqueta de cuota inicial / pago migrado que ya vive ahí. */
+  monto_original: number | null;
+  motivo_edicion: string | null;
   perfiles: { nombre: string } | null;
 }
 
@@ -165,7 +172,9 @@ function usePagosContrato(contratoId: string) {
     queryFn: async (): Promise<PagoContrato[]> => {
       const { data, error } = await supabase
         .from("pagos")
-        .select("id, monto_recibido, fecha_pago, metodo_pago, estado, evidencia_url, observaciones, perfiles:recaudador_id (nombre)")
+        .select(
+          "id, monto_recibido, fecha_pago, metodo_pago, estado, evidencia_url, observaciones, monto_original, motivo_edicion, perfiles:recaudador_id (nombre)",
+        )
         .eq("contrato_id", contratoId)
         .order("fecha_pago", { ascending: false });
       if (error) throw error;
@@ -183,6 +192,7 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
   const pagos = usePagosContrato(contratoId);
   const finalizar = useFinalizarContrato();
   const eliminar = useEliminarContrato();
+  const editarMonto = useEditarMontoPago();
 
   const [confirmarFin, setConfirmarFin] = useState(false);
   const [confirmarEliminar, setConfirmarEliminar] = useState(false);
@@ -193,6 +203,13 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
   const [estadoComprobante, setEstadoComprobante] = useState<{ id: string; resultado: ResultadoComprobante } | null>(null);
   const [menuPago, setMenuPago] = useState<PagoContrato | null>(null);
   const [avisoContrato, setAvisoContrato] = useState<string | null>(null);
+
+  // Corrección de monto de un pago ya registrado (ver migración 00027):
+  // evita eliminar el contrato entero por un solo número mal tipeado.
+  const [pagoAEditar, setPagoAEditar] = useState<PagoContrato | null>(null);
+  const [montoCorregido, setMontoCorregido] = useState("");
+  const [motivoCorreccion, setMotivoCorreccion] = useState("");
+  const [errorEditarPago, setErrorEditarPago] = useState<string | null>(null);
 
   const r = resumen.data;
   const fechasConPago = new Set((pagos.data ?? []).map((p) => fechaLocalISO(p.fecha_pago)));
@@ -373,6 +390,33 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
     );
     setEstadoComprobante({ id: p.id, resultado });
     setMenuPago(null);
+  }
+
+  function abrirEdicionMonto(p: PagoContrato) {
+    setPagoAEditar(p);
+    setMontoCorregido(String(p.monto_recibido));
+    setMotivoCorreccion("");
+    setErrorEditarPago(null);
+    setMenuPago(null);
+  }
+
+  function confirmarEdicionMonto() {
+    if (!pagoAEditar) return;
+    const monto = Number.parseFloat(montoCorregido);
+    if (!Number.isFinite(monto) || monto <= 0) {
+      setErrorEditarPago("Ingresa un monto válido, mayor a cero.");
+      return;
+    }
+    setErrorEditarPago(null);
+    editarMonto.mutate(
+      { contratoId, pagoId: pagoAEditar.id, monto, motivo: motivoCorreccion },
+      {
+        onSuccess: () => setPagoAEditar(null),
+        onError: (err) => {
+          setErrorEditarPago(mensajeError(err, "No se pudo corregir el monto. Intenta de nuevo."));
+        },
+      },
+    );
   }
 
   return (
@@ -566,6 +610,15 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
                   <span className="mt-1 inline-block rounded-md bg-cobre/10 px-1.5 py-0.5 text-[10px] font-semibold text-cobre">
                     {p.observaciones}
                   </span>
+                )}
+                {/* Aparte de `observaciones` a propósito (ver migración
+                    00027): así nunca se mezcla con la etiqueta de cuota
+                    inicial / pago migrado de arriba. */}
+                {p.monto_original !== null && (
+                  <p className="mt-1 text-[11px] font-medium text-oxido">
+                    Monto corregido — antes {soles.format(p.monto_original)}
+                    {p.motivo_edicion && ` · ${p.motivo_edicion}`}
+                  </p>
                 )}
               </div>
               <button
@@ -766,6 +819,13 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
                 </button>
               </div>
 
+              <button
+                type="button"
+                onClick={() => abrirEdicionMonto(menuPago)}
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold text-grafito hover:bg-fondo"
+              >
+                <Pencil className="h-4 w-4 text-grafito/50" /> Corregir monto del pago
+              </button>
               {menuPago.evidencia_url && (
                 <button
                   type="button"
@@ -807,6 +867,111 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
               >
                 <WhatsAppIcon className="h-4 w-4 text-whatsapp" /> Enviar contrato por WhatsApp
               </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Corregir monto de un pago (sin eliminar el contrato) ── */}
+      <AnimatePresence>
+        {pagoAEditar && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] grid place-items-end bg-grafito/40 backdrop-blur-sm sm:place-items-center"
+            onClick={() => !editarMonto.isPending && setPagoAEditar(null)}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Corregir monto del pago"
+          >
+            <motion.div
+              initial={{ y: 48 }}
+              animate={{ y: 0 }}
+              exit={{ y: 48 }}
+              transition={{ type: "spring", stiffness: 320, damping: 30 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md space-y-4 rounded-t-3xl bg-tarjeta p-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] shadow-2xl sm:rounded-3xl"
+            >
+              <div className="flex items-center justify-between">
+                <h2 className="font-black uppercase tracking-wide text-grafito">Corregir monto</h2>
+                <button
+                  type="button"
+                  onClick={() => setPagoAEditar(null)}
+                  disabled={editarMonto.isPending}
+                  aria-label="Cerrar"
+                  className="rounded-lg p-1.5 text-grafito/40 hover:bg-fondo disabled:opacity-50"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <p className="text-xs text-grafito/50">
+                Pago del {fechaHora.format(new Date(pagoAEditar.fecha_pago))} vía{" "}
+                {LABEL_METODO[pagoAEditar.metodo_pago]}. Monto actual:{" "}
+                <span className="font-bold text-grafito">{soles.format(pagoAEditar.monto_recibido)}</span>. Esto
+                solo corrige el monto — la fecha y el método de pago quedan igual.
+              </p>
+
+              <div>
+                <label
+                  htmlFor="monto-corregido"
+                  className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40"
+                >
+                  Monto correcto (S/.)
+                </label>
+                <input
+                  id="monto-corregido"
+                  type="number"
+                  inputMode="decimal"
+                  step="0.10"
+                  min="0"
+                  autoFocus
+                  value={montoCorregido}
+                  onChange={(e) => setMontoCorregido(e.target.value)}
+                  className="mt-1 w-full rounded-2xl border border-borde bg-fondo px-4 py-3.5 text-2xl font-black tabular-nums text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="motivo-correccion"
+                  className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40"
+                >
+                  Motivo (opcional)
+                </label>
+                <input
+                  id="motivo-correccion"
+                  type="text"
+                  value={motivoCorreccion}
+                  onChange={(e) => setMotivoCorreccion(e.target.value)}
+                  placeholder="Ej. Se tipeó de más por error"
+                  className="mt-1 w-full rounded-2xl border border-borde bg-fondo px-4 py-3 text-sm text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
+                />
+              </div>
+
+              {errorEditarPago && (
+                <p className="rounded-xl bg-oxido/10 p-3 text-sm font-medium text-oxido">{errorEditarPago}</p>
+              )}
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPagoAEditar(null)}
+                  disabled={editarMonto.isPending}
+                  className="flex-1 rounded-xl border border-borde py-3 text-sm font-semibold text-grafito disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmarEdicionMonto}
+                  disabled={editarMonto.isPending}
+                  className="flex-1 rounded-xl bg-amarillo py-3 text-sm font-bold text-grafito disabled:opacity-60"
+                >
+                  {editarMonto.isPending ? "Guardando…" : "Guardar corrección"}
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}

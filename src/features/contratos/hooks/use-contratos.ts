@@ -464,3 +464,48 @@ export function useEditarContrato() {
     },
   });
 }
+
+// ── Editar el monto de un pago (corregir un cobro mal tipeado) ─
+export interface DatosEditarMontoPago {
+  /** Solo para invalidar las queries correctas — la RPC ya sabe a qué
+   *  contrato pertenece el pago por su propia cuenta. */
+  contratoId: string;
+  pagoId: string;
+  monto: number;
+  motivo?: string;
+}
+
+/** Corrige el monto de un pago YA REGISTRADO sin eliminar el contrato ni
+ *  rehacerlo desde cero — para cuando el cajero se confunde de monto al
+ *  cobrar. La RPC (migración 00027) bloquea el pago y el contrato dueño
+ *  (mismo criterio que `registrar_pago`/`editar_contrato`), recalcula
+ *  completado/parcial con la misma fórmula de siempre, y deja el monto
+ *  original y el motivo en columnas propias — nunca reescribe
+ *  `observaciones` (ahí vive la marca de cuota inicial / pago migrado,
+ *  ver migraciones 00021 y 00025). No toca fecha ni método de pago, así
+ *  que el cronograma y la mora quedan exactamente igual que antes. */
+export function useEditarMontoPago() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ pagoId, monto, motivo }: DatosEditarMontoPago) => {
+      const { data, error } = await supabase.rpc("editar_monto_pago", {
+        p_pago_id: pagoId,
+        p_monto: monto,
+        p_motivo: motivo?.trim() || null,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (_data, variables) => {
+      // "pagos-contrato" es la queryKey local de `usePagosContrato` en
+      // detalle-contrato.tsx — mismo nombre exacto, para que este hook
+      // (definido aparte) también pueda invalidarla.
+      void queryClient.invalidateQueries({ queryKey: ["pagos-contrato", variables.contratoId] });
+      void queryClient.invalidateQueries({ queryKey: ["resumen-contrato", variables.contratoId] });
+      void queryClient.invalidateQueries({ queryKey: ["kpis-dashboard"] });
+      void queryClient.invalidateQueries({ queryKey: ["clientes-en-mora"] });
+      void queryClient.invalidateQueries({ queryKey: ["buscar-contratos"] });
+    },
+  });
+}

@@ -40,6 +40,8 @@ import {
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { AlertaCobrosFallidos } from "@/components/layout/alerta-cobros-fallidos";
+import { AlertaMora } from "@/components/layout/alerta-mora";
+import { useKpis } from "@/features/dashboard/hooks/use-kpis";
 
 // ── Rutas de navegación ──────────────────────────────────────
 const NAV_ITEMS = [
@@ -50,6 +52,24 @@ const NAV_ITEMS = [
 ] as const;
 
 const ACCION_RAPIDA = { href: "/pagos/nuevo", label: "Cobrar", icon: Banknote };
+
+/** Punto rojo con el número de clientes en mora, superpuesto al ícono
+ *  de "Dashboard" en ambas navegaciones (bottom nav móvil y sidebar de
+ *  escritorio) — así la mora se ve sin tener que entrar al Dashboard.
+ *  `n` sale siempre de `useKpis` (mismo dato que el banner `AlertaMora`
+ *  y la sección "Acción urgente" del Dashboard, ver migración 00023):
+ *  nunca se recalcula aparte. */
+function BadgeMora({ n }: { n: number }) {
+  if (n <= 0) return null;
+  return (
+    <span
+      aria-label={`${n} ${n === 1 ? "cliente" : "clientes"} en mora`}
+      className="absolute -right-1.5 -top-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full border-2 border-tarjeta bg-oxido px-1 text-[9px] font-bold leading-none text-white"
+    >
+      {n > 9 ? "9+" : n}
+    </span>
+  );
+}
 
 // ── Hook: estado de conexión Realtime ────────────────────────
 // Solo se suscribe en desktop (el Sidebar donde se muestra está oculto
@@ -145,6 +165,8 @@ const REPUESTOS = { href: "/repuestos", label: "Repuestos", icon: Package };
 function BottomNav({ pathname }: { pathname: string }) {
   const izquierda = NAV_ITEMS.slice(0, 2);
   const derecha = NAV_ITEMS.slice(2);
+  const kpis = useKpis();
+  const enMora = kpis.data?.clientes_en_mora ?? 0;
 
   const Item = ({ href, label, icon: Icon }: (typeof NAV_ITEMS)[number]) => {
     const activo = pathname.startsWith(href);
@@ -158,7 +180,10 @@ function BottomNav({ pathname }: { pathname: string }) {
           activo ? "text-cobre" : "text-grafito/45",
         )}
       >
-        <Icon className="h-5 w-5" strokeWidth={activo ? 2.5 : 2} />
+        <span className="relative">
+          <Icon className="h-5 w-5" strokeWidth={activo ? 2.5 : 2} />
+          {href === "/dashboard" && <BadgeMora n={enMora} />}
+        </span>
         {label}
         {activo && (
           <motion.span
@@ -219,6 +244,8 @@ function Sidebar({ pathname }: { pathname: string }) {
   const [colapsado, setColapsado] = useState(false);
   const conectado = useConexionSupabase();
   const cerrarSesion = useCerrarSesion();
+  const kpis = useKpis();
+  const enMora = kpis.data?.clientes_en_mora ?? 0;
 
   return (
     <motion.aside
@@ -261,7 +288,10 @@ function Sidebar({ pathname }: { pathname: string }) {
                   : "text-grafito/55 hover:bg-fondo hover:text-grafito",
               )}
             >
-              <Icon className="h-5 w-5 shrink-0" strokeWidth={activo ? 2.5 : 2} />
+              <span className="relative shrink-0">
+                <Icon className="h-5 w-5" strokeWidth={activo ? 2.5 : 2} />
+                {href === "/dashboard" && <BadgeMora n={enMora} />}
+              </span>
               {!colapsado && <span className="truncate">{label}</span>}
             </Link>
           );
@@ -356,6 +386,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="flex w-full flex-1 flex-col">
         <MobileTopBar />
         <AlertaCobrosFallidos />
+        <AlertaMora />
         <main className="w-full flex-1 pb-24 lg:pb-0">{children}</main>
       </div>
       <BottomNav pathname={pathname} />

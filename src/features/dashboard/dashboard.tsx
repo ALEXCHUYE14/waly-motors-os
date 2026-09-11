@@ -28,24 +28,12 @@ import {
   soles,
   fechaCorta,
   type ClienteEnMora,
-  type KpisDashboard,
 } from "@/lib/supabase";
 import { cn, urlFirmadas, abrirWhatsApp } from "@/lib/utils";
 import { WhatsAppIcon } from "@/components/ui/whatsapp-icon";
+import { useKpis } from "@/features/dashboard/hooks/use-kpis";
 
 // ── Data hooks ───────────────────────────────────────────────
-function useKpis() {
-  return useQuery({
-    queryKey: ["kpis-dashboard"],
-    queryFn: async (): Promise<KpisDashboard> => {
-      const { data, error } = await supabase.rpc("kpis_dashboard");
-      if (error) throw error;
-      return data as KpisDashboard;
-    },
-    refetchInterval: 60_000,
-  });
-}
-
 function useClientesEnMora() {
   return useQuery({
     queryKey: ["clientes-en-mora"],

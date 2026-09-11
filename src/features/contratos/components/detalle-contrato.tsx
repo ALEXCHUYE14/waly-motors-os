@@ -212,7 +212,20 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
   const [errorEditarPago, setErrorEditarPago] = useState<string | null>(null);
 
   const r = resumen.data;
-  const fechasConPago = new Set((pagos.data ?? []).map((p) => fechaLocalISO(p.fecha_pago)));
+  // Mismo criterio exacto que `resumen_contrato` / `obtener_clientes_en_mora`
+  // (migración 00023): solo pagos 'completado' o 'parcial' cuentan como
+  // "día pagado". Sin este filtro, un pago 'rechazado' (con fecha_pago en
+  // un día que el backend SÍ considera en mora, porque nunca lo suma al
+  // cálculo de `proximo_vencimiento`) pintaría ese día de verde en el
+  // calendario mientras el backend lo sigue tratando como impago —
+  // incluye tanto cobros en vivo como "Abono adicional" (pago del
+  // cuaderno), que insertan la misma tabla `pagos` con la fecha elegida
+  // por el asesor (ver registrar_pago, migración 00021).
+  const fechasConPago = new Set(
+    (pagos.data ?? [])
+      .filter((p) => p.estado === "completado" || p.estado === "parcial")
+      .map((p) => fechaLocalISO(p.fecha_pago)),
+  );
 
   function confirmarFinalizacion(motivo: MotivoFinalizacion) {
     setErrorFinalizar(null);

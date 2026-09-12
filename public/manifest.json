@@ -1,6 +1,6 @@
 {
-  "name": "Waly Motors OS",
-  "short_name": "Waly Motors",
+  "name": "Wally Motors OS",
+  "short_name": "Wally Motors",
   "description": "Gestión de alquiler y venta de mototaxis",
   "start_url": "/dashboard",
   "display": "standalone",

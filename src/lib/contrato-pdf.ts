@@ -350,7 +350,7 @@ export async function generarContratoPdf(d: DatosContratoPdf): Promise<jsPDF> {
   doc.setFontSize(8.5);
   doc.setTextColor(...GRIS);
   parrafo(
-    `Nota: este documento fue generado automáticamente por Waly Motors OS como resumen de las condiciones acordadas entre las partes, tomando como base el modelo de contrato interno de la empresa. Se recomienda la revisión de un asesor legal para casos que así lo requieran.`,
+    `Nota: este documento fue generado automáticamente por Wally Motors OS como resumen de las condiciones acordadas entre las partes, tomando como base el modelo de contrato interno de la empresa. Se recomienda la revisión de un asesor legal para casos que así lo requieran.`,
   );
   doc.setFont("helvetica", "normal");
 

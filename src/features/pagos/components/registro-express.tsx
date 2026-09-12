@@ -237,7 +237,7 @@ export default function RegistroExpress() {
         metodo,
       });
       const primerNombre = seleccion.nombre_completo.split(" ")[0];
-      const mensaje = `Hola ${primerNombre}, aquí tu comprobante de pago de ${soles.format(montoNum)} — Waly Motors. ¡Gracias por tu preferencia!`;
+      const mensaje = `Hola ${primerNombre}, aquí tu comprobante de pago de ${soles.format(montoNum)} — Wally Motors. ¡Gracias por tu preferencia!`;
       const resultado = await compartirComprobante(
         doc,
         `comprobante-${seleccion.placa}.pdf`,

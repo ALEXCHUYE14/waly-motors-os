@@ -261,7 +261,7 @@ function Sidebar({ pathname }: { pathname: string }) {
         <span className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full border border-borde bg-tarjeta">
           <Image
             src="/img/logo.png"
-            alt="Waly Motors"
+            alt="Wally Motors"
             fill
             className="object-cover"
             sizes="44px"
@@ -353,7 +353,7 @@ function MobileTopBar() {
       )}
     >
       <span className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full border border-borde bg-tarjeta">
-        <Image src="/img/logo.png" alt="Waly Motors" fill className="object-cover" sizes="32px" />
+        <Image src="/img/logo.png" alt="Wally Motors" fill className="object-cover" sizes="32px" />
       </span>
       <button
         type="button"

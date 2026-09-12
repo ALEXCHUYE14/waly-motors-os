@@ -166,7 +166,7 @@ export async function generarComprobantePago(d: DatosComprobante): Promise<jsPDF
   doc.setTextColor(...GRIS);
   doc.setFontSize(8);
   doc.setFont("helvetica", "italic");
-  doc.text("Gracias por su preferencia — Waly Motors", margen, lineaPie + 6);
+  doc.text("Gracias por su preferencia — Wally Motors", margen, lineaPie + 6);
   doc.text("Comprobante generado digitalmente.", margen, lineaPie + 10.5);
 
   return doc;

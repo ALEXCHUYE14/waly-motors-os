@@ -10,13 +10,13 @@ const archivo = Archivo({
 });
 
 export const metadata: Metadata = {
-  title: "Waly Motors OS",
+  title: "Wally Motors OS",
   description: "Gestión de alquiler y venta de mototaxis — Waldir Yarlequé",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Waly Motors",
+    title: "Wally Motors",
   },
 };
 

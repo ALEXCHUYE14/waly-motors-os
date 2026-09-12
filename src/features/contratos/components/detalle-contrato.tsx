@@ -367,7 +367,7 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
       }
       const primerNombre = r.cliente_nombre.split(" ")[0];
       const mensaje =
-        `Hola ${primerNombre}, te compartimos el contrato de tu mototaxi placa ${r.vehiculo_placa} con Waly Motors. ` +
+        `Hola ${primerNombre}, te compartimos el contrato de tu mototaxi placa ${r.vehiculo_placa} con Wally Motors. ` +
         `Puedes revisarlo aquí (enlace válido por 7 días): ${url}`;
       abrirWhatsApp(r.cliente_telefono, mensaje);
     } catch (err) {
@@ -394,7 +394,7 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
       recaudador: p.perfiles?.nombre ?? null,
     });
     const primerNombre = r.cliente_nombre.split(" ")[0];
-    const mensaje = `Hola ${primerNombre}, aquí tu comprobante de pago de ${soles.format(p.monto_recibido)} — Waly Motors. ¡Gracias por tu preferencia!`;
+    const mensaje = `Hola ${primerNombre}, aquí tu comprobante de pago de ${soles.format(p.monto_recibido)} — Wally Motors. ¡Gracias por tu preferencia!`;
     const resultado = await compartirComprobante(
       doc,
       `comprobante-${r.vehiculo_placa}-${p.id.slice(0, 6)}.pdf`,

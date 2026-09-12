@@ -58,7 +58,7 @@ export default function LoginPage() {
   function contactarSoporte() {
     abrirWhatsApp(
       WHATSAPP_SOPORTE,
-      "Hola, necesito ayuda para ingresar a Waly Motors OS.",
+      "Hola, necesito ayuda para ingresar a Wally Motors OS.",
     );
   }
 
@@ -95,7 +95,7 @@ export default function LoginPage() {
           >
             <div className="space-y-1 text-center">
               <h1 className="font-black uppercase tracking-wide text-grafito">
-                Waly Motors OS
+                Wally Motors OS
               </h1>
               <p className="text-xs text-grafito/50">
                 Ingresa con tu cuenta de Administrador
@@ -187,7 +187,7 @@ export default function LoginPage() {
           </motion.form>
 
           <p className="mt-5 text-center text-[11px] text-grafito/30">
-            © {new Date().getFullYear()} Waly Motors. Todos los derechos reservados.
+            © {new Date().getFullYear()} Wally Motors. Todos los derechos reservados.
           </p>
         </div>
       </div>

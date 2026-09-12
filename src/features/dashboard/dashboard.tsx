@@ -26,7 +26,6 @@ import {
 import {
   supabase,
   soles,
-  fechaCorta,
   type ClienteEnMora,
 } from "@/lib/supabase";
 import { cn, urlFirmadas, abrirWhatsApp } from "@/lib/utils";
@@ -57,13 +56,17 @@ function useClientesEnMora() {
 }
 
 // ── Mensaje dinámico de cobranza ─────────────────────────────
+// Deliberadamente dice "lleva N días de atraso" y NO la fecha de
+// vencimiento: un cliente moroso que lee una fecha pasada se hace el
+// desentendido ("se webea") — el número de días acumulados es más
+// difícil de discutir y transmite mejor la urgencia real del atraso.
 function construirMensajeWhatsApp(c: ClienteEnMora): string {
   const primerNombre = c.nombre_completo.split(" ")[0];
-  const fecha = fechaCorta.format(new Date(`${c.fecha_vencida}T12:00:00`));
+  const dias = `${c.dias_retraso} ${c.dias_retraso === 1 ? "día" : "días"}`;
   return (
-    `Hola ${primerNombre}, te saludamos de Waly Motors. ` +
-    `Te recordamos que tu cuota de ${soles.format(c.monto_cuota)} ` +
-    `del vehículo de placa ${c.placa} venció el ${fecha}. ` +
+    `Hola ${primerNombre}, te saludamos de Wally Motors. ` +
+    `Tu cuota de ${soles.format(c.monto_cuota)} ` +
+    `del vehículo de placa ${c.placa} lleva ${dias} de atraso. ` +
     `Puedes realizar tu pago vía Yape, Plin o en efectivo con nuestro recaudador. ` +
     `¡Gracias por tu preferencia! 🛺`
   );

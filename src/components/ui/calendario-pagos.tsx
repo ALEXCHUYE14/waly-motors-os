@@ -4,13 +4,20 @@
  * WALY MOTORS OS — Calendario de pagos
  * ──────────────────────────────────────
  * Grilla mensual con navegación, para el detalle de un contrato: marca
- * en VERDE los días con al menos un pago real registrado, y en ROJO el
- * tramo de mora activa — desde `proximo_vencimiento` (la próxima cuota
- * que se venció sin pagar, misma fórmula exacta que ya usan
- * `obtener_clientes_en_mora` y `resumen_contrato`, migración 00023)
- * hasta hoy. Nunca se recalcula la mora por separado aquí: solo pinta lo
- * que ya calculó el backend, para que jamás quede desincronizada con la
- * sección "Acción urgente" del dashboard.
+ * en VERDE los días con al menos un pago real registrado, en AZUL los
+ * pagos registrados en DOMINGO (mismo dato — `fechasConPago` — solo que
+ * el día de la semana de esa fecha cae domingo; ver `esDomingo` más
+ * abajo, no depende de ninguna columna nueva ni de ningún cálculo del
+ * backend), y en ROJO el tramo de mora activa — desde
+ * `proximo_vencimiento` (la próxima cuota que se venció sin pagar,
+ * misma fórmula exacta que ya usan `obtener_clientes_en_mora` y
+ * `resumen_contrato`, migración 00023) hasta hoy. Nunca se recalcula la
+ * mora por separado aquí: solo pinta lo que ya calculó el backend, para
+ * que jamás quede desincronizada con la sección "Acción urgente" del
+ * dashboard. Al ser puramente visual y derivarse de datos que ya
+ * existen (la fecha del pago), el color de domingo aparece solo con
+ * volver a abrir el calendario — no requiere ninguna migración ni
+ * recálculo para los pagos de domingo ya registrados.
  */
 
 import { useState } from "react";
@@ -110,19 +117,35 @@ export function CalendarioPagos({ fechasConPago, inicioMora, mesInicial }: Calen
           if (dia === null) return <span key={`v-${i}`} />;
           const iso = aISO(anioVisible, mesVisible, dia);
           const tienePago = fechasConPago.has(iso);
+          // 0 = domingo (mismo criterio que `primerDiaSemana` arriba) —
+          // se calcula con los mismos enteros de la grilla, nunca
+          // parseando `iso` como fecha, para no arrastrar ningún lío de
+          // huso horario a un simple "¿qué día de la semana es?".
+          const esDomingo = new Date(anioVisible, mesVisible, dia).getDay() === 0;
+          const pagoDomingo = tienePago && esDomingo;
           const enMora = inicioMora !== null && iso >= inicioMora && iso <= hoyISO;
           const esHoy = iso === hoyISO;
           return (
             <span
               key={iso}
-              title={tienePago ? "Pago registrado" : enMora ? "Día en mora" : undefined}
+              title={
+                pagoDomingo
+                  ? "Pago registrado en domingo"
+                  : tienePago
+                    ? "Pago registrado"
+                    : enMora
+                      ? "Día en mora"
+                      : undefined
+              }
               className={cn(
                 "mx-auto grid h-8 w-8 place-items-center rounded-lg text-xs font-semibold",
-                tienePago
-                  ? "bg-emerald-500/15 text-emerald-600"
-                  : enMora
-                    ? "bg-oxido/15 text-oxido"
-                    : "text-grafito/60",
+                pagoDomingo
+                  ? "bg-sky-500/15 text-sky-600"
+                  : tienePago
+                    ? "bg-emerald-500/15 text-emerald-600"
+                    : enMora
+                      ? "bg-oxido/15 text-oxido"
+                      : "text-grafito/60",
                 esHoy && "ring-2 ring-amarillo ring-inset",
               )}
             >
@@ -132,9 +155,12 @@ export function CalendarioPagos({ fechasConPago, inicioMora, mesInicial }: Calen
         })}
       </div>
 
-      <div className="mt-3 flex items-center gap-4 text-[11px] text-grafito/50">
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-grafito/50">
         <span className="flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /> Pago registrado
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-full bg-sky-500" /> Pago en domingo
         </span>
         <span className="flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full bg-oxido" /> En mora

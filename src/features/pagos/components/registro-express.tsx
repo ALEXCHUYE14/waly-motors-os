@@ -183,9 +183,22 @@ export default function RegistroExpress() {
   // (para poder marcar qué día del cronograma cubre, en vez de asumir
   // "hoy" ciegamente — ver comentario en `fechaCobertura` arriba).
   const mostrarSelectorFecha = esAbono || (seleccion?.dias_retraso ?? 0) > 0;
-  // Nunca se permite una fecha futura (el pago ya ocurrió) ni una vacía.
+  // Pago ADELANTADO: pedido real del dueño del negocio — un cliente
+  // puede pagar hoy para cubrir un día futuro del cronograma (p. ej.
+  // adelantar el domingo que viene). Solo aplica a un cobro EN VIVO —
+  // "Abono adicional" sigue limitado a hoy o antes, porque por
+  // definición es un pago que YA ocurrió y está anotado en el
+  // cuaderno; fecharlo a futuro no tiene sentido. El techo de 1 año
+  // (en vez de sin límite) es solo para que un typo de fecha (año
+  // equivocado) no le fije al contrato una "próxima cuota" a años de
+  // distancia y esconda la mora real por mucho tiempo — la misma
+  // `registrar_pago` (migración 00029) aplica el mismo tope del lado
+  // del servidor, así que esto nunca depende solo del frontend.
+  const fechaMaximaCobertura = esAbono
+    ? hoyISO
+    : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const fechaCoberturaValida =
-    !mostrarSelectorFecha || (fechaCobertura !== "" && fechaCobertura <= hoyISO);
+    !mostrarSelectorFecha || (fechaCobertura !== "" && fechaCobertura <= fechaMaximaCobertura);
 
   // Limpieza del object URL del preview
   useEffect(() => {
@@ -519,7 +532,7 @@ export default function RegistroExpress() {
                   <input
                     id="fecha-cobertura"
                     type="date"
-                    max={hoyISO}
+                    max={fechaMaximaCobertura}
                     value={fechaCobertura}
                     onChange={(e) => setFechaCobertura(e.target.value)}
                     className="mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-3 text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
@@ -527,11 +540,13 @@ export default function RegistroExpress() {
                   <p className="mt-1 text-xs text-grafito/50">
                     {esAbono
                       ? "Usa la fecha real del cuaderno, no la de hoy — así la mora y el historial del contrato quedan correctos."
-                      : `${seleccion.dias_retraso} ${seleccion.dias_retraso === 1 ? "día" : "días"} de atraso desde el ${
-                          seleccion.proximo_vencimiento
-                            ? new Date(`${seleccion.proximo_vencimiento}T12:00:00`).toLocaleDateString("es-PE")
-                            : "—"
-                        }. Marca qué día del cronograma cubre este pago — no siempre "hoy", si cubre solo parte de los días atrasados.`}
+                      : fechaCobertura > hoyISO
+                        ? "Fecha futura: este pago adelanta el cronograma — la próxima cuota pendiente pasará a calcularse desde este día."
+                        : `${seleccion.dias_retraso} ${seleccion.dias_retraso === 1 ? "día" : "días"} de atraso desde el ${
+                            seleccion.proximo_vencimiento
+                              ? new Date(`${seleccion.proximo_vencimiento}T12:00:00`).toLocaleDateString("es-PE")
+                              : "—"
+                          }. Marca qué día del cronograma cubre este pago — no siempre "hoy", si cubre solo parte de los días atrasados o si el cliente adelanta un pago futuro.`}
                   </p>
                 </div>
               )}

@@ -57,6 +57,34 @@ interface ResultadoBusqueda {
    *  cliente tiene atraso: así un cobro amortiza el día más antiguo
    *  pendiente primero, no siempre "hoy". */
   proximo_vencimiento: string | null;
+  /** Tarifas diferenciadas del contrato (migración 00022/00030) — `null`
+   *  en contratos sin tarifa diaria diferenciada: ahí el monto es
+   *  `monto_cuota` todos los días, como siempre. */
+  monto_lunes_sabado: number | null;
+  monto_domingo: number | null;
+}
+
+/** Fecha de hoy `YYYY-MM-DD` en hora LOCAL del dispositivo — a
+ *  diferencia de `toISOString()` (UTC), que después de las 7 pm en Perú
+ *  ya devuelve el día siguiente. */
+function hoyLocalISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** Monto que corresponde cobrar el día `fechaISO` (`YYYY-MM-DD`): la
+ *  tarifa de domingo si el contrato la tiene y ese día es domingo; en
+ *  cualquier otro caso `monto_cuota` (tarifa Lunes–Sábado). El día de la
+ *  semana se lee al mediodía local para no arrastrar huso horario. */
+function montoDelDia(
+  r: Pick<ResultadoBusqueda, "monto_cuota" | "monto_domingo">,
+  fechaISO: string,
+): number {
+  const d = new Date(`${fechaISO}T12:00:00`);
+  if (r.monto_domingo !== null && !Number.isNaN(d.getTime()) && d.getDay() === 0) {
+    return r.monto_domingo;
+  }
+  return r.monto_cuota;
 }
 
 // Canales de cobro en vivo — se muestran en la grilla del paso 2.
@@ -152,7 +180,11 @@ export default function RegistroExpress() {
   // Estado del cobro
   const [termino, setTermino] = useState("");
   const [seleccion, setSeleccion] = useState<ResultadoBusqueda | null>(null);
-  const [monto, setMonto] = useState("");
+  // Monto escrito a mano por el cobrador — `null` mientras no haya tocado
+  // el campo: entonces el monto mostrado es el sugerido para el día que
+  // cubre el pago (tarifa de domingo o de L–S, ver `montoDelDia`). Se
+  // vuelve a `null` al cambiar la fecha, para que el monto siga al día.
+  const [montoManual, setMontoManual] = useState<string | null>(null);
   const [metodo, setMetodo] = useState<MetodoPago>("yape");
   // Fecha que cubre este pago — nunca se asume "hoy" a ciegas en dos
   // casos: "Abono adicional" (fecha real del cuaderno) y cualquier cobro
@@ -161,7 +193,7 @@ export default function RegistroExpress() {
   // hoy sin importar cuántos días cubre el monto recibido). Se
   // reinicializa a `proximo_vencimiento` del contrato elegido — o a hoy
   // si está al día — en `seleccionarContrato`, más abajo.
-  const [fechaCobertura, setFechaCobertura] = useState(() => new Date().toISOString().slice(0, 10));
+  const [fechaCobertura, setFechaCobertura] = useState(hoyLocalISO);
   const [evidencia, setEvidencia] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
@@ -173,16 +205,23 @@ export default function RegistroExpress() {
   const busqueda = useBusquedaContratos(termino);
   const registrar = useRegistrarPago();
 
-  const montoNum = Number.parseFloat(monto);
-  const montoValido = Number.isFinite(montoNum) && montoNum > 0;
   const esAbono = metodo === "abono_adicional";
-  const hoyISO = new Date().toISOString().slice(0, 10);
+  const hoyISO = hoyLocalISO();
   // El selector de fecha se muestra para "Abono adicional" (siempre,
   // aunque el contrato esté al día: es justamente para migrar pagos
   // pasados) y para cualquier cobro en vivo a un cliente con atraso
   // (para poder marcar qué día del cronograma cubre, en vez de asumir
   // "hoy" ciegamente — ver comentario en `fechaCobertura` arriba).
   const mostrarSelectorFecha = esAbono || (seleccion?.dias_retraso ?? 0) > 0;
+  // Día que realmente cubre el cobro: la fecha elegida si hay selector,
+  // o hoy si no (cobro puntual de un cliente al día). De ahí sale el
+  // monto sugerido — un domingo con tarifa diferenciada sugiere la de
+  // domingo, también cuando hoy mismo es domingo y no hay selector.
+  const fechaEfectiva = mostrarSelectorFecha ? fechaCobertura : hoyISO;
+  const montoSugerido = seleccion ? montoDelDia(seleccion, fechaEfectiva) : null;
+  const monto = montoManual ?? (montoSugerido !== null ? String(montoSugerido) : "");
+  const montoNum = Number.parseFloat(monto);
+  const montoValido = Number.isFinite(montoNum) && montoNum > 0;
   // Pago ADELANTADO: pedido real del dueño del negocio — un cliente
   // puede pagar hoy para cubrir un día futuro del cronograma (p. ej.
   // adelantar el domingo que viene). Solo aplica a un cobro EN VIVO —
@@ -268,9 +307,9 @@ export default function RegistroExpress() {
     setPaso(1);
     setTermino("");
     setSeleccion(null);
-    setMonto("");
+    setMontoManual(null);
     setMetodo("yape");
-    setFechaCobertura(new Date().toISOString().slice(0, 10));
+    setFechaCobertura(hoyLocalISO());
     setEvidencia(null);
     setPreviewUrl(null);
     setEstadoComprobante(null);
@@ -284,7 +323,7 @@ export default function RegistroExpress() {
    *  está al día, queda en hoy (comportamiento de siempre). */
   function seleccionarContrato(r: ResultadoBusqueda) {
     setSeleccion(r);
-    setMonto(String(r.monto_cuota));
+    setMontoManual(null); // el monto sugerido sale de la fecha (ver `montoSugerido`)
     setFechaCobertura(r.dias_retraso > 0 && r.proximo_vencimiento ? r.proximo_vencimiento : hoyISO);
     setPaso(2);
   }
@@ -459,15 +498,18 @@ export default function RegistroExpress() {
                 step="0.10"
                 min="0"
                 value={monto}
-                onChange={(e) => setMonto(e.target.value)}
+                onChange={(e) => setMontoManual(e.target.value)}
                 className="mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-4 text-3xl font-black tabular-nums text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
               />
               <div className="mt-2 flex gap-2">
-                {[seleccion.monto_cuota, seleccion.monto_cuota * 2, seleccion.monto_cuota / 2].map((m) => (
+                {(montoSugerido !== null
+                  ? [montoSugerido, montoSugerido * 2, montoSugerido / 2]
+                  : []
+                ).map((m) => (
                   <button
                     key={m}
                     type="button"
-                    onClick={() => setMonto(m.toFixed(2))}
+                    onClick={() => setMontoManual(m.toFixed(2))}
                     className="rounded-lg border border-borde px-3 py-1.5 text-xs font-bold text-grafito"
                   >
                     {soles.format(m)}
@@ -534,7 +576,11 @@ export default function RegistroExpress() {
                     type="date"
                     max={fechaMaximaCobertura}
                     value={fechaCobertura}
-                    onChange={(e) => setFechaCobertura(e.target.value)}
+                    onChange={(e) => {
+                      setFechaCobertura(e.target.value);
+                      // El monto sigue al día elegido (domingo ↔ L–S).
+                      setMontoManual(null);
+                    }}
                     className="mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-3 text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
                   />
                   <p className="mt-1 text-xs text-grafito/50">

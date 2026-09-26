@@ -509,3 +509,48 @@ export function useEditarMontoPago() {
     },
   });
 }
+
+// ── Eliminar un pago (registrado por error) ────────────────────
+export interface DatosEliminarPago {
+  /** Solo para invalidar las queries correctas — la RPC ya sabe a qué
+   *  contrato pertenece el pago por su propia cuenta. */
+  contratoId: string;
+  pagoId: string;
+}
+
+/** Elimina por completo un pago mal registrado (placa equivocada, monto
+ *  y fecha ambos mal tipeados, un cobro duplicado, etc.) — para cuando
+ *  "corregir el monto" (`useEditarMontoPago`) no alcanza porque el pago
+ *  entero no debió existir. La RPC (migración 00031) bloquea el pago y
+ *  el contrato dueño (mismo criterio que `registrar_pago` /
+ *  `editar_monto_pago`) y devuelve la fila borrada — se usa para poder
+ *  limpiar después, best-effort, la foto de evidencia en Storage si
+ *  tenía una.
+ *
+ *  Al no guardarse ningún total aparte (saldo, % de avance, mora y
+ *  "Caja hoy" siempre se recalculan al vuelo desde `pagos` — ver
+ *  `resumen_contrato` / `kpis_dashboard` / `obtener_clientes_en_mora`),
+ *  borrar la fila basta para que todo el resto del sistema quede
+ *  consistente sin tocar nada más: si el pago borrado era el más
+ *  reciente y estaba fechado mal, la mora se recalcula sola contra el
+ *  pago real anterior. */
+export function useEliminarPago() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ pagoId }: DatosEliminarPago) => {
+      const { data, error } = await supabase.rpc("eliminar_pago", {
+        p_pago_id: pagoId,
+      });
+      if (error) throw error;
+      return data as { evidencia_url: string | null };
+    },
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ["pagos-contrato", variables.contratoId] });
+      void queryClient.invalidateQueries({ queryKey: ["resumen-contrato", variables.contratoId] });
+      void queryClient.invalidateQueries({ queryKey: ["kpis-dashboard"] });
+      void queryClient.invalidateQueries({ queryKey: ["clientes-en-mora"] });
+      void queryClient.invalidateQueries({ queryKey: ["buscar-contratos"] });
+    },
+  });
+}

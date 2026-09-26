@@ -34,6 +34,7 @@ import {
   useFinalizarContrato,
   useEliminarContrato,
   useEditarMontoPago,
+  useEliminarPago,
   type MotivoFinalizacion,
 } from "@/features/contratos/hooks/use-contratos";
 import { generarComprobantePago, compartirComprobante, type ResultadoComprobante } from "@/lib/comprobante";
@@ -193,6 +194,7 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
   const finalizar = useFinalizarContrato();
   const eliminar = useEliminarContrato();
   const editarMonto = useEditarMontoPago();
+  const eliminarPago = useEliminarPago();
 
   const [confirmarFin, setConfirmarFin] = useState(false);
   const [confirmarEliminar, setConfirmarEliminar] = useState(false);
@@ -210,6 +212,11 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
   const [montoCorregido, setMontoCorregido] = useState("");
   const [motivoCorreccion, setMotivoCorreccion] = useState("");
   const [errorEditarPago, setErrorEditarPago] = useState<string | null>(null);
+
+  // Eliminar un pago registrado por error (ver migración 00031): para
+  // cuando el pago entero no debió existir, no solo su monto.
+  const [pagoAEliminar, setPagoAEliminar] = useState<PagoContrato | null>(null);
+  const [errorEliminarPago, setErrorEliminarPago] = useState<string | null>(null);
 
   const r = resumen.data;
   // Mismo criterio exacto que `resumen_contrato` / `obtener_clientes_en_mora`
@@ -427,6 +434,39 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
         onSuccess: () => setPagoAEditar(null),
         onError: (err) => {
           setErrorEditarPago(mensajeError(err, "No se pudo corregir el monto. Intenta de nuevo."));
+        },
+      },
+    );
+  }
+
+  function abrirEliminarPago(p: PagoContrato) {
+    setPagoAEliminar(p);
+    setErrorEliminarPago(null);
+    setMenuPago(null);
+  }
+
+  function confirmarEliminarPago() {
+    if (!pagoAEliminar) return;
+    setErrorEliminarPago(null);
+    eliminarPago.mutate(
+      { contratoId, pagoId: pagoAEliminar.id },
+      {
+        onSuccess: async (pagoBorrado) => {
+          setPagoAEliminar(null);
+          // Best-effort, igual que al eliminar un contrato entero: la fila
+          // ya se borró en la base de datos — si esto falla, solo queda
+          // una foto huérfana en Storage, nunca vuelve a bloquear ni a
+          // mostrar el pago ya eliminado.
+          if (pagoBorrado?.evidencia_url) {
+            try {
+              await supabase.storage.from("evidencias").remove([pagoBorrado.evidencia_url]);
+            } catch {
+              // No propagar: el pago ya se eliminó correctamente.
+            }
+          }
+        },
+        onError: (err) => {
+          setErrorEliminarPago(mensajeError(err, "No se pudo eliminar el pago. Intenta de nuevo."));
         },
       },
     );
@@ -839,6 +879,13 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
               >
                 <Pencil className="h-4 w-4 text-grafito/50" /> Corregir monto del pago
               </button>
+              <button
+                type="button"
+                onClick={() => abrirEliminarPago(menuPago)}
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold text-oxido hover:bg-oxido/5"
+              >
+                <Trash2 className="h-4 w-4" /> Eliminar pago (registrado por error)
+              </button>
               {menuPago.evidencia_url && (
                 <button
                   type="button"
@@ -983,6 +1030,77 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
                   className="flex-1 rounded-xl bg-amarillo py-3 text-sm font-bold text-grafito disabled:opacity-60"
                 >
                   {editarMonto.isPending ? "Guardando…" : "Guardar corrección"}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Eliminar un pago (registrado por error) ── */}
+      <AnimatePresence>
+        {pagoAEliminar && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] grid place-items-end bg-grafito/40 backdrop-blur-sm sm:place-items-center"
+            onClick={() => !eliminarPago.isPending && setPagoAEliminar(null)}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Eliminar pago"
+          >
+            <motion.div
+              initial={{ y: 48 }}
+              animate={{ y: 0 }}
+              exit={{ y: 48 }}
+              transition={{ type: "spring", stiffness: 320, damping: 30 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md space-y-4 rounded-t-3xl bg-tarjeta p-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] shadow-2xl sm:rounded-3xl"
+            >
+              <div className="flex items-center justify-between">
+                <h2 className="font-black uppercase tracking-wide text-grafito">Eliminar pago</h2>
+                <button
+                  type="button"
+                  onClick={() => setPagoAEliminar(null)}
+                  disabled={eliminarPago.isPending}
+                  aria-label="Cerrar"
+                  className="rounded-lg p-1.5 text-grafito/40 hover:bg-fondo disabled:opacity-50"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <p className="text-sm text-grafito">
+                Se eliminará por completo el pago de{" "}
+                <span className="font-black">{soles.format(pagoAEliminar.monto_recibido)}</span> del{" "}
+                {fechaHora.format(new Date(pagoAEliminar.fecha_pago))} vía{" "}
+                {LABEL_METODO[pagoAEliminar.metodo_pago]}. El saldo, el % de avance y la mora del contrato se
+                recalculan solos al quitarlo. Esta acción no se puede deshacer — úsala solo cuando el pago no
+                debió registrarse (si solo el monto está mal, usa &quot;Corregir monto del pago&quot; en vez de
+                esto).
+              </p>
+
+              {errorEliminarPago && (
+                <p className="rounded-xl bg-oxido/10 p-3 text-sm font-medium text-oxido">{errorEliminarPago}</p>
+              )}
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPagoAEliminar(null)}
+                  disabled={eliminarPago.isPending}
+                  className="flex-1 rounded-xl border border-borde py-3 text-sm font-semibold text-grafito disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmarEliminarPago}
+                  disabled={eliminarPago.isPending}
+                  className="flex-1 rounded-xl bg-oxido py-3 text-sm font-bold text-white disabled:opacity-60"
+                >
+                  {eliminarPago.isPending ? "Eliminando…" : "Sí, eliminar pago"}
                 </button>
               </div>
             </motion.div>

@@ -43,16 +43,6 @@ import { cn, urlFirmada, abrirWhatsApp, cargarAdjuntoGarantia, mensajeError } fr
 import { WhatsAppIcon } from "@/components/ui/whatsapp-icon";
 import { CalendarioPagos } from "@/components/ui/calendario-pagos";
 
-/** `fecha_pago` llega como timestamptz (ej. "2024-01-15T23:40:00+00:00")
- *  — recortar los primeros 10 caracteres tomaría el día en UTC, que
- *  puede ser el día SIGUIENTE al real en hora de Perú para un pago hecho
- *  de noche. Se arma la fecha en hora LOCAL del navegador (igual que
- *  cualquier `toLocaleDateString("es-PE")` ya usado en este archivo). */
-function fechaLocalISO(iso: string): string {
-  const d = new Date(iso);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
 // ── Tipos ────────────────────────────────────────────────────
 interface ResumenContrato {
   contrato_id: string;
@@ -79,7 +69,8 @@ interface ResumenContrato {
    *  00023) — nunca se recalcula por separado en el frontend, para que
    *  el calendario de pagos y la lista de mora del dashboard jamás
    *  muestren un número distinto para el mismo contrato. */
-  proximo_vencimiento: string;
+  /** Primer vencimiento impago, o `null` si no queda ninguno en el horizonte. */
+  proximo_vencimiento: string | null;
   dias_retraso: number;
   total_pagado: number;
   saldo: number;
@@ -167,6 +158,30 @@ function useResumen(contratoId: string) {
   });
 }
 
+/** Cronograma día a día con cobertura por monto (migración 00032). Es la
+ *  única fuente de verdad del calendario: el color y la mora salen de aquí,
+ *  nunca de las fechas de los pagos. */
+interface DiaCronograma {
+  fecha: string; // YYYY-MM-DD
+  esperado: number;
+  cubierto: number;
+  al_dia: boolean;
+  en_mora: boolean;
+}
+
+function useCronograma(contratoId: string) {
+  return useQuery({
+    queryKey: ["cronograma-contrato", contratoId],
+    queryFn: async (): Promise<DiaCronograma[]> => {
+      const { data, error } = await supabase.rpc("cronograma_contrato", {
+        p_contrato_id: contratoId,
+      });
+      if (error) throw error;
+      return (data ?? []) as DiaCronograma[];
+    },
+  });
+}
+
 function usePagosContrato(contratoId: string) {
   return useQuery({
     queryKey: ["pagos-contrato", contratoId],
@@ -219,19 +234,12 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
   const [errorEliminarPago, setErrorEliminarPago] = useState<string | null>(null);
 
   const r = resumen.data;
-  // Mismo criterio exacto que `resumen_contrato` / `obtener_clientes_en_mora`
-  // (migración 00023): solo pagos 'completado' o 'parcial' cuentan como
-  // "día pagado". Sin este filtro, un pago 'rechazado' (con fecha_pago en
-  // un día que el backend SÍ considera en mora, porque nunca lo suma al
-  // cálculo de `proximo_vencimiento`) pintaría ese día de verde en el
-  // calendario mientras el backend lo sigue tratando como impago —
-  // incluye tanto cobros en vivo como "Abono adicional" (pago del
-  // cuaderno), que insertan la misma tabla `pagos` con la fecha elegida
-  // por el asesor (ver registrar_pago, migración 00021).
-  const fechasConPago = new Set(
-    (pagos.data ?? [])
-      .filter((p) => p.estado === "completado" || p.estado === "parcial")
-      .map((p) => fechaLocalISO(p.fecha_pago)),
+  const cronograma = useCronograma(contratoId);
+  const diasCubiertos = new Set(
+    (cronograma.data ?? []).filter((d) => d.al_dia).map((d) => d.fecha),
+  );
+  const diasMora = new Set(
+    (cronograma.data ?? []).filter((d) => d.en_mora).map((d) => d.fecha),
   );
 
   function confirmarFinalizacion(motivo: MotivoFinalizacion) {
@@ -608,10 +616,7 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
           <h2 className="text-sm font-black uppercase tracking-widest text-grafito/40">
             Calendario de pagos
           </h2>
-          <CalendarioPagos
-            fechasConPago={fechasConPago}
-            inicioMora={r.dias_retraso > 0 ? r.proximo_vencimiento : null}
-          />
+          <CalendarioPagos diasCubiertos={diasCubiertos} diasMora={diasMora} />
           {r.dias_retraso > 0 && (
             <p className="text-xs font-medium text-oxido">
               {r.dias_retraso} {r.dias_retraso === 1 ? "día" : "días"} de retraso desde el{" "}

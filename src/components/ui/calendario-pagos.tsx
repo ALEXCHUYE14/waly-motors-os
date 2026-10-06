@@ -3,21 +3,11 @@
 /**
  * WALY MOTORS OS — Calendario de pagos
  * ──────────────────────────────────────
- * Grilla mensual con navegación, para el detalle de un contrato: marca
- * en VERDE los días con al menos un pago real registrado, en AZUL los
- * pagos registrados en DOMINGO (mismo dato — `fechasConPago` — solo que
- * el día de la semana de esa fecha cae domingo; ver `esDomingo` más
- * abajo, no depende de ninguna columna nueva ni de ningún cálculo del
- * backend), y en ROJO el tramo de mora activa — desde
- * `proximo_vencimiento` (la próxima cuota que se venció sin pagar,
- * misma fórmula exacta que ya usan `obtener_clientes_en_mora` y
- * `resumen_contrato`, migración 00023) hasta hoy. Nunca se recalcula la
- * mora por separado aquí: solo pinta lo que ya calculó el backend, para
- * que jamás quede desincronizada con la sección "Acción urgente" del
- * dashboard. Al ser puramente visual y derivarse de datos que ya
- * existen (la fecha del pago), el color de domingo aparece solo con
- * volver a abrir el calendario — no requiere ninguna migración ni
- * recálculo para los pagos de domingo ya registrados.
+ * Grilla mensual para el detalle de un contrato. No calcula nada: pinta
+ * los días que `cronograma_contrato` (migración 00032) marca como
+ * cubiertos (VERDE, o AZUL si el día es domingo) y los días en mora
+ * (ROJO). Así el calendario y el cálculo de mora de la sección "Acción
+ * urgente" nunca pueden discrepar.
  */
 
 import { useState } from "react";
@@ -31,13 +21,11 @@ const MESES = [
 ];
 
 export interface CalendarioPagosProps {
-  /** Fechas `YYYY-MM-DD` (en hora local, ya resueltas por el llamador)
-   *  con al menos un pago registrado ese día. */
-  fechasConPago: Set<string>;
-  /** Fecha `YYYY-MM-DD` desde la que el contrato está en mora, o `null`
-   *  si está al día — normalmente `proximo_vencimiento` cuando
-   *  `dias_retraso > 0`. */
-  inicioMora: string | null;
+  /** Días `YYYY-MM-DD` del cronograma ya cubiertos por los pagos (al día),
+   *  según `cronograma_contrato` (migración 00032). */
+  diasCubiertos: Set<string>;
+  /** Días `YYYY-MM-DD` del cronograma en mora (vencidos e impagos). */
+  diasMora: Set<string>;
   /** Mes a mostrar al abrir (cualquier fecha `YYYY-MM-DD` de ese mes) —
    *  por defecto, el mes actual. */
   mesInicial?: string;
@@ -47,7 +35,7 @@ function aISO(anio: number, mes: number, dia: number): string {
   return `${anio}-${String(mes + 1).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
 }
 
-export function CalendarioPagos({ fechasConPago, inicioMora, mesInicial }: CalendarioPagosProps) {
+export function CalendarioPagos({ diasCubiertos, diasMora, mesInicial }: CalendarioPagosProps) {
   let base: Date;
   try {
     base = mesInicial ? new Date(`${mesInicial}T12:00:00`) : new Date();
@@ -116,14 +104,16 @@ export function CalendarioPagos({ fechasConPago, inicioMora, mesInicial }: Calen
         {celdas.map((dia, i) => {
           if (dia === null) return <span key={`v-${i}`} />;
           const iso = aISO(anioVisible, mesVisible, dia);
-          const tienePago = fechasConPago.has(iso);
+          // Cubierto = el cronograma del servidor confirma que este día
+          // quedó pagado (ya incluye montos y cobros adelantados).
+          const tienePago = diasCubiertos.has(iso);
           // 0 = domingo (mismo criterio que `primerDiaSemana` arriba) —
           // se calcula con los mismos enteros de la grilla, nunca
           // parseando `iso` como fecha, para no arrastrar ningún lío de
           // huso horario a un simple "¿qué día de la semana es?".
           const esDomingo = new Date(anioVisible, mesVisible, dia).getDay() === 0;
           const pagoDomingo = tienePago && esDomingo;
-          const enMora = inicioMora !== null && iso >= inicioMora && iso <= hoyISO;
+          const enMora = diasMora.has(iso);
           const esHoy = iso === hoyISO;
           return (
             <span

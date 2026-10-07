@@ -252,9 +252,16 @@ export default function RegistroExpress() {
   // ciegamente — ver comentario en `fechaCobertura` arriba), y siempre
   // en un contrato de período propio.
   const mostrarSelectorFecha = esAbono || (seleccion?.dias_retraso ?? 0) > 0 || esPeriodoPropio;
-  // El segundo campo ("hasta") solo aplica a un contrato de período
-  // propio: un cobro diario sigue siendo de un solo día, como siempre.
-  const mostrarRangoHasta = mostrarSelectorFecha && esPeriodoPropio;
+  // El segundo campo ("hasta") se muestra junto con el selector de fecha
+  // SIEMPRE que este aparece — también en un contrato diario. Bug real
+  // corregido (migración 00034): un pago grande en un contrato diario
+  // (atraso que se cubre de un salto, o un adelanto) necesita poder
+  // declarar varios días, igual que uno semanal — si no, ese dinero
+  // cubre solo su propio día y el resto queda en mora aunque ya se haya
+  // cobrado. Por defecto "hasta" = "desde" (un solo día, cero cambio
+  // para el caso simple); el asesor lo ensancha solo cuando el pago
+  // realmente cubre más de un día.
+  const mostrarRangoHasta = mostrarSelectorFecha;
   // Día que realmente cubre el cobro: la fecha elegida si hay selector,
   // o hoy si no (cobro puntual de un cliente al día). De ahí sale el
   // monto sugerido — un domingo con tarifa diferenciada sugiere la de

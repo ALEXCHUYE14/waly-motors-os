@@ -87,6 +87,31 @@ function montoDelDia(
   return r.monto_cuota;
 }
 
+/** Suma `dias` días a una fecha `YYYY-MM-DD` y devuelve el resultado en
+ *  el mismo formato — al mediodía, mismo criterio anti-huso-horario que
+ *  el resto del archivo. */
+function sumarDias(fechaISO: string, dias: number): string {
+  const d = new Date(`${fechaISO}T12:00:00`);
+  d.setDate(d.getDate() + dias);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** Cuántos días dura un período de la frecuencia del contrato — para
+ *  sugerir por defecto el "hasta" de un pago semanal/quincenal/mensual
+ *  a partir de su "desde" (el cobrador lo puede ajustar igual). */
+function duracionPeriodo(frecuencia: string): number {
+  switch (frecuencia) {
+    case "semanal":
+      return 7;
+    case "quincenal":
+      return 15;
+    case "mensual":
+      return 30;
+    default:
+      return 1;
+  }
+}
+
 // Canales de cobro en vivo — se muestran en la grilla del paso 2.
 // "Abono adicional" (más abajo) NO es un canal de cobro: es la forma de
 // migrar un pago que Waly ya tiene anotado en su cuaderno, así que va
@@ -194,6 +219,13 @@ export default function RegistroExpress() {
   // reinicializa a `proximo_vencimiento` del contrato elegido — o a hoy
   // si está al día — en `seleccionarContrato`, más abajo.
   const [fechaCobertura, setFechaCobertura] = useState(hoyLocalISO);
+  // "Hasta" del rango de cobertura (migración 00033) — solo se usa en
+  // contratos semanales/quincenales/mensuales, donde CADA pago cubre un
+  // período completo, no un solo día. Se recalcula a partir de
+  // `fechaCobertura` ("desde") y la frecuencia del contrato (ver
+  // `duracionPeriodo`) cada vez que el asesor cambia el "desde" — él
+  // puede seguir ajustándola a mano después (una semana parcial, etc.).
+  const [fechaCoberturaHasta, setFechaCoberturaHasta] = useState(hoyLocalISO);
   const [evidencia, setEvidencia] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
@@ -207,12 +239,22 @@ export default function RegistroExpress() {
 
   const esAbono = metodo === "abono_adicional";
   const hoyISO = hoyLocalISO();
+  // Un contrato semanal/quincenal/mensual no tiene "cuotas de hoy": cada
+  // pago cubre un período completo propio — así que SIEMPRE hay que
+  // declarar qué rango de fechas cubre (nunca se puede asumir "hoy" ni
+  // dejarlo en blanco, o el calendario le vuelve a quedar con huecos sin
+  // marcar — pedido real: ver registro-express, contratos semanales).
+  const esPeriodoPropio = (seleccion?.frecuencia_pago ?? "diario") !== "diario";
   // El selector de fecha se muestra para "Abono adicional" (siempre,
   // aunque el contrato esté al día: es justamente para migrar pagos
-  // pasados) y para cualquier cobro en vivo a un cliente con atraso
-  // (para poder marcar qué día del cronograma cubre, en vez de asumir
-  // "hoy" ciegamente — ver comentario en `fechaCobertura` arriba).
-  const mostrarSelectorFecha = esAbono || (seleccion?.dias_retraso ?? 0) > 0;
+  // pasados), para cualquier cobro en vivo a un cliente con atraso (para
+  // poder marcar qué día del cronograma cubre, en vez de asumir "hoy"
+  // ciegamente — ver comentario en `fechaCobertura` arriba), y siempre
+  // en un contrato de período propio.
+  const mostrarSelectorFecha = esAbono || (seleccion?.dias_retraso ?? 0) > 0 || esPeriodoPropio;
+  // El segundo campo ("hasta") solo aplica a un contrato de período
+  // propio: un cobro diario sigue siendo de un solo día, como siempre.
+  const mostrarRangoHasta = mostrarSelectorFecha && esPeriodoPropio;
   // Día que realmente cubre el cobro: la fecha elegida si hay selector,
   // o hoy si no (cobro puntual de un cliente al día). De ahí sale el
   // monto sugerido — un domingo con tarifa diferenciada sugiere la de
@@ -238,6 +280,11 @@ export default function RegistroExpress() {
     : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const fechaCoberturaValida =
     !mostrarSelectorFecha || (fechaCobertura !== "" && fechaCobertura <= fechaMaximaCobertura);
+  const fechaCoberturaHastaValida =
+    !mostrarRangoHasta ||
+    (fechaCoberturaHasta !== "" &&
+      fechaCoberturaHasta >= fechaCobertura &&
+      fechaCoberturaHasta <= fechaMaximaCobertura);
 
   // Limpieza del object URL del preview
   useEffect(() => {
@@ -260,7 +307,12 @@ export default function RegistroExpress() {
   }
 
   function confirmarCobro() {
-    if (!seleccion || !montoValido || !fechaCoberturaValida) return;
+    if (!seleccion || !montoValido || !fechaCoberturaValida || !fechaCoberturaHastaValida) return;
+    // Fecha "oficial" del pago: el fin del período para un cobro con
+    // rango (así el historial muestra la semana que se acaba de
+    // cancelar), o la fecha elegida / ahora para cualquier otro caso —
+    // mismo criterio de siempre.
+    const fechaParaMostrar = mostrarRangoHasta ? fechaCoberturaHasta : fechaCobertura;
     registrar.mutate({
       contratoId: seleccion.contrato_id,
       monto: montoNum,
@@ -269,7 +321,12 @@ export default function RegistroExpress() {
       // El mediodía evita que, al convertir a UTC, la fecha elegida se
       // corra al día anterior/siguiente según la zona horaria del
       // dispositivo — mismo criterio que el resto del sistema.
-      fechaPago: mostrarSelectorFecha ? `${fechaCobertura}T12:00:00` : undefined,
+      fechaPago: mostrarSelectorFecha ? `${fechaParaMostrar}T12:00:00` : undefined,
+      // Rango explícito que cubre este pago (migración 00033) — el
+      // calendario del contrato pinta exactamente estos días, nunca
+      // "adivina" cobertura a partir del monto.
+      coberturaDesde: mostrarRangoHasta ? fechaCobertura : undefined,
+      coberturaHasta: mostrarRangoHasta ? fechaCoberturaHasta : undefined,
     });
   }
 
@@ -280,7 +337,9 @@ export default function RegistroExpress() {
     try {
       const doc = await generarComprobantePago({
         folio: `RE-${Date.now().toString(36).toUpperCase()}`,
-        fechaIso: mostrarSelectorFecha ? `${fechaCobertura}T12:00:00` : new Date().toISOString(),
+        fechaIso: mostrarSelectorFecha
+          ? `${mostrarRangoHasta ? fechaCoberturaHasta : fechaCobertura}T12:00:00`
+          : new Date().toISOString(),
         clienteNombre: seleccion.nombre_completo,
         clienteDocumento: seleccion.numero_documento,
         vehiculoPlaca: seleccion.placa,
@@ -310,6 +369,7 @@ export default function RegistroExpress() {
     setMontoManual(null);
     setMetodo("yape");
     setFechaCobertura(hoyLocalISO());
+    setFechaCoberturaHasta(hoyLocalISO());
     setEvidencia(null);
     setPreviewUrl(null);
     setEstadoComprobante(null);
@@ -324,7 +384,14 @@ export default function RegistroExpress() {
   function seleccionarContrato(r: ResultadoBusqueda) {
     setSeleccion(r);
     setMontoManual(null); // el monto sugerido sale de la fecha (ver `montoSugerido`)
-    setFechaCobertura(r.dias_retraso > 0 && r.proximo_vencimiento ? r.proximo_vencimiento : hoyISO);
+    const desde = r.dias_retraso > 0 && r.proximo_vencimiento ? r.proximo_vencimiento : hoyISO;
+    setFechaCobertura(desde);
+    // Período propio (semanal/quincenal/mensual): sugiere el rango
+    // completo del período a partir de "desde" — el asesor lo ajusta si
+    // el pago cubre solo parte de un período.
+    setFechaCoberturaHasta(
+      r.frecuencia_pago !== "diario" ? sumarDias(desde, duracionPeriodo(r.frecuencia_pago) - 1) : desde,
+    );
     setPaso(2);
   }
 
@@ -559,40 +626,79 @@ export default function RegistroExpress() {
                 <BookOpen className="h-4 w-4" /> Abono adicional (pago del cuaderno)
               </button>
 
-              {/* Se muestra para "Abono adicional" (migración de cuaderno)
-                  Y para cualquier cobro en vivo a un cliente atrasado —
-                  nunca se asume "hoy" a ciegas cuando eso rompería la
-                  secuencia del cronograma (ver `mostrarSelectorFecha`). */}
+              {/* Se muestra para "Abono adicional" (migración de cuaderno),
+                  para cualquier cobro en vivo a un cliente atrasado, y
+                  siempre en un contrato semanal/quincenal/mensual — ahí
+                  CADA pago cubre un período propio, nunca "hoy" a secas
+                  (ver `mostrarSelectorFecha` / `esPeriodoPropio`). */}
               {mostrarSelectorFecha && (
-                <div className="mt-3">
-                  <label
-                    htmlFor="fecha-cobertura"
-                    className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40"
-                  >
-                    {esAbono ? "Fecha en que se recibió el pago" : "Fecha que cubre este pago"}
-                  </label>
-                  <input
-                    id="fecha-cobertura"
-                    type="date"
-                    max={fechaMaximaCobertura}
-                    value={fechaCobertura}
-                    onChange={(e) => {
-                      setFechaCobertura(e.target.value);
-                      // El monto sigue al día elegido (domingo ↔ L–S).
-                      setMontoManual(null);
-                    }}
-                    className="mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-3 text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
-                  />
-                  <p className="mt-1 text-xs text-grafito/50">
+                <div className="mt-3 space-y-3">
+                  <div>
+                    <label
+                      htmlFor="fecha-cobertura"
+                      className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40"
+                    >
+                      {esAbono
+                        ? "Fecha en que se recibió el pago"
+                        : mostrarRangoHasta
+                          ? "Desde (inicio del período que cubre)"
+                          : "Fecha que cubre este pago"}
+                    </label>
+                    <input
+                      id="fecha-cobertura"
+                      type="date"
+                      max={fechaMaximaCobertura}
+                      value={fechaCobertura}
+                      onChange={(e) => {
+                        const nuevaDesde = e.target.value;
+                        setFechaCobertura(nuevaDesde);
+                        // El monto sigue al día elegido (domingo ↔ L–S).
+                        setMontoManual(null);
+                        // El "hasta" se corre el mismo tramo — el asesor
+                        // lo puede ajustar después si el pago cubre
+                        // menos días de los que dura un período completo.
+                        if (mostrarRangoHasta && seleccion) {
+                          setFechaCoberturaHasta(
+                            sumarDias(nuevaDesde, duracionPeriodo(seleccion.frecuencia_pago) - 1),
+                          );
+                        }
+                      }}
+                      className="mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-3 text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
+                    />
+                  </div>
+
+                  {mostrarRangoHasta && (
+                    <div>
+                      <label
+                        htmlFor="fecha-cobertura-hasta"
+                        className="text-[11px] font-semibold uppercase tracking-widest text-grafito/40"
+                      >
+                        Hasta (fin del período que cubre)
+                      </label>
+                      <input
+                        id="fecha-cobertura-hasta"
+                        type="date"
+                        min={fechaCobertura}
+                        max={fechaMaximaCobertura}
+                        value={fechaCoberturaHasta}
+                        onChange={(e) => setFechaCoberturaHasta(e.target.value)}
+                        className="mt-1 w-full rounded-2xl border border-borde bg-tarjeta px-4 py-3 text-grafito focus-visible:outline-2 focus-visible:outline-amarillo"
+                      />
+                    </div>
+                  )}
+
+                  <p className="text-xs text-grafito/50">
                     {esAbono
                       ? "Usa la fecha real del cuaderno, no la de hoy — así la mora y el historial del contrato quedan correctos."
-                      : fechaCobertura > hoyISO
-                        ? "Fecha futura: este pago adelanta el cronograma — la próxima cuota pendiente pasará a calcularse desde este día."
-                        : `${seleccion.dias_retraso} ${seleccion.dias_retraso === 1 ? "día" : "días"} de atraso desde el ${
-                            seleccion.proximo_vencimiento
-                              ? new Date(`${seleccion.proximo_vencimiento}T12:00:00`).toLocaleDateString("es-PE")
-                              : "—"
-                          }. Marca qué día del cronograma cubre este pago — no siempre "hoy", si cubre solo parte de los días atrasados o si el cliente adelanta un pago futuro.`}
+                      : mostrarRangoHasta
+                        ? "El calendario del contrato va a marcar como pagados exactamente estos días — ajusta el rango si el pago cubre menos (o más) de un período completo."
+                        : fechaCobertura > hoyISO
+                          ? "Fecha futura: este pago adelanta el cronograma — la próxima cuota pendiente pasará a calcularse desde este día."
+                          : `${seleccion.dias_retraso} ${seleccion.dias_retraso === 1 ? "día" : "días"} de atraso desde el ${
+                              seleccion.proximo_vencimiento
+                                ? new Date(`${seleccion.proximo_vencimiento}T12:00:00`).toLocaleDateString("es-PE")
+                                : "—"
+                            }. Marca qué día del cronograma cubre este pago — no siempre "hoy", si cubre solo parte de los días atrasados o si el cliente adelanta un pago futuro.`}
                   </p>
                 </div>
               )}
@@ -600,7 +706,7 @@ export default function RegistroExpress() {
 
             <button
               type="button"
-              disabled={!montoValido || !fechaCoberturaValida}
+              disabled={!montoValido || !fechaCoberturaValida || !fechaCoberturaHastaValida}
               onClick={() => setPaso(3)}
               className="w-full rounded-xl bg-amarillo py-4 font-bold text-grafito active:scale-[0.98] disabled:opacity-40"
             >
@@ -665,12 +771,21 @@ export default function RegistroExpress() {
                 ["Placa", seleccion.placa],
                 ["Monto", soles.format(montoNum)],
                 ["Método", LABEL_METODO[metodo]],
-                ...(mostrarSelectorFecha
-                  ? ([["Fecha del pago", new Date(`${fechaCobertura}T12:00:00`).toLocaleDateString("es-PE")]] as [
-                      string,
-                      string,
-                    ][])
-                  : []),
+                ...(mostrarRangoHasta
+                  ? ([
+                      [
+                        "Cubre",
+                        `${new Date(`${fechaCobertura}T12:00:00`).toLocaleDateString("es-PE")} – ${new Date(
+                          `${fechaCoberturaHasta}T12:00:00`,
+                        ).toLocaleDateString("es-PE")}`,
+                      ],
+                    ] as [string, string][])
+                  : mostrarSelectorFecha
+                    ? ([["Fecha del pago", new Date(`${fechaCobertura}T12:00:00`).toLocaleDateString("es-PE")]] as [
+                        string,
+                        string,
+                      ][])
+                    : []),
               ].map(([k, v]) => (
                 <div key={k} className="flex justify-between gap-4">
                   <dt className="text-grafito/50">{k}</dt>
@@ -688,7 +803,7 @@ export default function RegistroExpress() {
             <button
               type="button"
               onClick={confirmarCobro}
-              disabled={registrar.isPending || !fechaCoberturaValida}
+              disabled={registrar.isPending || !fechaCoberturaValida || !fechaCoberturaHastaValida}
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-amarillo py-4 font-bold text-grafito active:scale-[0.98] disabled:opacity-60"
             >
               {registrar.isPending ? (

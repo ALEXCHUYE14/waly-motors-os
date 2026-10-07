@@ -33,6 +33,15 @@ export interface NuevoCobro {
    *  actual — comportamiento de siempre para un cobro puntual sin
    *  atraso. */
   fechaPago?: string;
+  /** Rango de días `YYYY-MM-DD` que cubre este pago (migración 00033) —
+   *  para un pago semanal/quincenal/mensual, o para adelantar/atrasar
+   *  varios días de un cronograma diario de un solo cobro. Ambos o
+   *  ninguno: si no se manda, el pago cubre únicamente su propio
+   *  `fechaPago` (comportamiento de siempre). El calendario del
+   *  contrato pinta exactamente estos días como pagados — nunca
+   *  "adivina" cobertura a partir del monto. */
+  coberturaDesde?: string;
+  coberturaHasta?: string;
 }
 
 interface CobroEncolado {
@@ -44,6 +53,8 @@ interface CobroEncolado {
   evidenciaNombre: string | null;
   observaciones?: string;
   fechaPago?: string;
+  coberturaDesde?: string;
+  coberturaHasta?: string;
   creadoEn: string;
 }
 
@@ -136,6 +147,8 @@ async function ejecutarCobro(cobro: NuevoCobro): Promise<void> {
     p_evidencia_url: evidenciaUrl,
     p_observaciones: cobro.observaciones ?? null,
     p_fecha_pago: cobro.fechaPago ?? null,
+    p_cobertura_desde: cobro.coberturaDesde ?? null,
+    p_cobertura_hasta: cobro.coberturaHasta ?? null,
   });
   if (error) throw error;
 }
@@ -182,6 +195,8 @@ export function useRegistrarPago() {
                   : null,
               observaciones: item.observaciones,
               fechaPago: item.fechaPago,
+              coberturaDesde: item.coberturaDesde,
+              coberturaHasta: item.coberturaHasta,
             });
           } catch (err) {
             if (esErrorDeRed(err)) {
@@ -224,6 +239,8 @@ export function useRegistrarPago() {
           evidenciaNombre: cobro.evidencia?.name ?? null,
           observaciones: cobro.observaciones,
           fechaPago: cobro.fechaPago,
+          coberturaDesde: cobro.coberturaDesde,
+          coberturaHasta: cobro.coberturaHasta,
           creadoEn: new Date().toISOString(),
         });
         guardarCola(cola);

@@ -43,16 +43,6 @@ import { cn, urlFirmada, abrirWhatsApp, cargarAdjuntoGarantia, mensajeError } fr
 import { WhatsAppIcon } from "@/components/ui/whatsapp-icon";
 import { CalendarioPagos } from "@/components/ui/calendario-pagos";
 
-/** `fecha_pago` llega como timestamptz (ej. "2024-01-15T23:40:00+00:00")
- *  — recortar los primeros 10 caracteres tomaría el día en UTC, que
- *  puede ser el día SIGUIENTE al real en hora de Perú para un pago hecho
- *  de noche. Se arma la fecha en hora LOCAL del navegador (igual que
- *  cualquier `toLocaleDateString("es-PE")` ya usado en este archivo). */
-function fechaLocalISO(iso: string): string {
-  const d = new Date(iso);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
 // ── Tipos ────────────────────────────────────────────────────
 interface ResumenContrato {
   contrato_id: string;
@@ -118,6 +108,11 @@ interface PagoContrato {
    *  etiqueta de cuota inicial / pago migrado que ya vive ahí. */
   monto_original: number | null;
   motivo_edicion: string | null;
+  /** Rango de días que cubre este pago (migración 00033) — `null` en
+   *  ambos cuando el pago cubre únicamente su propio `fecha_pago` (el
+   *  caso de siempre: cualquier cobro puntual diario). */
+  cobertura_desde: string | null;
+  cobertura_hasta: string | null;
   perfiles: { nombre: string } | null;
 }
 
@@ -168,13 +163,13 @@ function useResumen(contratoId: string) {
   });
 }
 
-/** Cronograma día a día con cobertura por monto (migración 00032). Es la
- *  única fuente de verdad del calendario: el color y la mora salen de aquí,
- *  nunca de las fechas de los pagos. */
+/** Cronograma día a día con cobertura EXPLÍCITA (migración 00033): un
+ *  día está `al_dia` cuando cae dentro del rango declarado de algún pago
+ *  real, nunca por monto acumulado. Es la única fuente de verdad del
+ *  calendario — el color y la mora salen de aquí. */
 interface DiaCronograma {
   fecha: string; // YYYY-MM-DD
   esperado: number;
-  cubierto: number;
   al_dia: boolean;
   en_mora: boolean;
 }
@@ -199,7 +194,7 @@ function usePagosContrato(contratoId: string) {
       const { data, error } = await supabase
         .from("pagos")
         .select(
-          "id, monto_recibido, fecha_pago, metodo_pago, estado, evidencia_url, observaciones, monto_original, motivo_edicion, perfiles:recaudador_id (nombre)",
+          "id, monto_recibido, fecha_pago, metodo_pago, estado, evidencia_url, observaciones, monto_original, motivo_edicion, cobertura_desde, cobertura_hasta, perfiles:recaudador_id (nombre)",
         )
         .eq("contrato_id", contratoId)
         .order("fecha_pago", { ascending: false });
@@ -244,34 +239,14 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
   const [errorEliminarPago, setErrorEliminarPago] = useState<string | null>(null);
 
   const r = resumen.data;
+  // Única fuente de verdad del calendario (migración 00033): un día está
+  // cubierto si cae dentro del rango de cobertura DECLARADO de algún
+  // pago real — nunca se infiere por monto acumulado, así que ningún día
+  // puede pintarse en verde sin que exista un pago que explícitamente lo
+  // cubra, y ningún pago registrado puede quedar sin pintar.
   const cronograma = useCronograma(contratoId);
-  // Dos fuentes de "día cubierto", unidas:
-  //   1) `cronograma_contrato` (migración 00032): días del plan que el
-  //      reparto por monto ya da por pagados, aunque no exista una fila
-  //      de `pagos` fechada exactamente ese día (p. ej. un abono grande
-  //      que adelanta varios días del cronograma).
-  //   2) Cualquier fila real de `pagos` fechada ese día (igual que antes
-  //      de 00032). Es la garantía de que "registré un cobro hoy" se
-  //      vea en verde SIEMPRE, sin importar si el reparto por monto
-  //      todavía está poniendo al día una deuda vieja de otros días —
-  //      un pago real jamás debe aparecer en rojo.
-  // `diasMora` resta esos días con pago real: la mora (deuda real, sin
-  // cobro ese día) y un cobro ya registrado nunca pueden pintar el mismo
-  // día de colores contradictorios.
-  const fechasConPagoDirecto = new Set(
-    (pagos.data ?? [])
-      .filter((p) => p.estado === "completado" || p.estado === "parcial")
-      .map((p) => fechaLocalISO(p.fecha_pago)),
-  );
-  const diasCubiertos = new Set([
-    ...(cronograma.data ?? []).filter((d) => d.al_dia).map((d) => d.fecha),
-    ...fechasConPagoDirecto,
-  ]);
-  const diasMora = new Set(
-    (cronograma.data ?? [])
-      .filter((d) => d.en_mora && !fechasConPagoDirecto.has(d.fecha))
-      .map((d) => d.fecha),
-  );
+  const diasCubiertos = new Set((cronograma.data ?? []).filter((d) => d.al_dia).map((d) => d.fecha));
+  const diasMora = new Set((cronograma.data ?? []).filter((d) => d.en_mora).map((d) => d.fecha));
 
   function confirmarFinalizacion(motivo: MotivoFinalizacion) {
     setErrorFinalizar(null);
@@ -699,6 +674,16 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
                   <span className="mt-1 inline-block rounded-md bg-cobre/10 px-1.5 py-0.5 text-[10px] font-semibold text-cobre">
                     {p.observaciones}
                   </span>
+                )}
+                {/* Rango de cobertura explícito (migración 00033) — solo
+                    se muestra cuando cubre más de un día; un cobro
+                    puntual de un solo día no necesita esta etiqueta. */}
+                {p.cobertura_desde && p.cobertura_hasta && p.cobertura_desde !== p.cobertura_hasta && (
+                  <p className="mt-1 text-[11px] text-grafito/50">
+                    Cubre del{" "}
+                    {new Date(`${p.cobertura_desde}T12:00:00`).toLocaleDateString("es-PE")} al{" "}
+                    {new Date(`${p.cobertura_hasta}T12:00:00`).toLocaleDateString("es-PE")}
+                  </p>
                 )}
                 {/* Aparte de `observaciones` a propósito (ver migración
                     00027): así nunca se mezcla con la etiqueta de cuota

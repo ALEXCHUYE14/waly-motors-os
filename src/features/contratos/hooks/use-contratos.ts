@@ -498,11 +498,15 @@ export function useEditarMontoPago() {
       return data;
     },
     onSuccess: (_data, variables) => {
-      // "pagos-contrato" es la queryKey local de `usePagosContrato` en
-      // detalle-contrato.tsx — mismo nombre exacto, para que este hook
-      // (definido aparte) también pueda invalidarla.
+      // "pagos-contrato" y "cronograma-contrato" son las queryKeys
+      // locales de `usePagosContrato` / `useCronograma` en
+      // detalle-contrato.tsx — mismos nombres exactos, para que este
+      // hook (definido aparte) también pueda invalidarlas. Corregir el
+      // monto puede cambiar completado ↔ parcial, así que el calendario
+      // también se refresca por las dudas.
       void queryClient.invalidateQueries({ queryKey: ["pagos-contrato", variables.contratoId] });
       void queryClient.invalidateQueries({ queryKey: ["resumen-contrato", variables.contratoId] });
+      void queryClient.invalidateQueries({ queryKey: ["cronograma-contrato", variables.contratoId] });
       void queryClient.invalidateQueries({ queryKey: ["kpis-dashboard"] });
       void queryClient.invalidateQueries({ queryKey: ["clientes-en-mora"] });
       void queryClient.invalidateQueries({ queryKey: ["buscar-contratos"] });
@@ -548,6 +552,11 @@ export function useEliminarPago() {
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({ queryKey: ["pagos-contrato", variables.contratoId] });
       void queryClient.invalidateQueries({ queryKey: ["resumen-contrato", variables.contratoId] });
+      // El calendario lee la cobertura directo de `pagos` — si no se
+      // invalida esta key, un pago recién eliminado se queda pintado en
+      // el calendario hasta que algo más lo refresque (pedido real: "al
+      // eliminar el pago se desmarque del calendario").
+      void queryClient.invalidateQueries({ queryKey: ["cronograma-contrato", variables.contratoId] });
       void queryClient.invalidateQueries({ queryKey: ["kpis-dashboard"] });
       void queryClient.invalidateQueries({ queryKey: ["clientes-en-mora"] });
       void queryClient.invalidateQueries({ queryKey: ["buscar-contratos"] });

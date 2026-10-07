@@ -124,7 +124,12 @@ function useSincronizacionRealtime(): void {
         invalidar(["contratos", "vehiculos-disponibles", "kpis-dashboard"]),
       )
       .on("postgres_changes", { event: "*", schema: "public", table: "pagos" }, () =>
-        invalidar(["kpis-dashboard", "clientes-en-mora", "pagos-contrato", "resumen-contrato"]),
+        // "cronograma-contrato" incluida a propósito: el calendario de
+        // pagos lee la cobertura directo de `pagos` — sin esto, un pago
+        // registrado o eliminado desde otra pantalla (ej. Registro
+        // Express) no se reflejaba en el calendario de una pestaña ya
+        // abierta hasta recargar a mano.
+        invalidar(["kpis-dashboard", "clientes-en-mora", "pagos-contrato", "resumen-contrato", "cronograma-contrato"]),
       )
       .on("postgres_changes", { event: "*", schema: "public", table: "mantenimientos" }, () =>
         invalidar(["mantenimientos", "vehiculos-alerta-mantenimiento", "kpis-dashboard", "vehiculos"]),

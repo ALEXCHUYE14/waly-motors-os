@@ -43,6 +43,16 @@ import { cn, urlFirmada, abrirWhatsApp, cargarAdjuntoGarantia, mensajeError } fr
 import { WhatsAppIcon } from "@/components/ui/whatsapp-icon";
 import { CalendarioPagos } from "@/components/ui/calendario-pagos";
 
+/** `fecha_pago` llega como timestamptz (ej. "2024-01-15T23:40:00+00:00")
+ *  — recortar los primeros 10 caracteres tomaría el día en UTC, que
+ *  puede ser el día SIGUIENTE al real en hora de Perú para un pago hecho
+ *  de noche. Se arma la fecha en hora LOCAL del navegador (igual que
+ *  cualquier `toLocaleDateString("es-PE")` ya usado en este archivo). */
+function fechaLocalISO(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 // ── Tipos ────────────────────────────────────────────────────
 interface ResumenContrato {
   contrato_id: string;
@@ -235,11 +245,32 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
 
   const r = resumen.data;
   const cronograma = useCronograma(contratoId);
-  const diasCubiertos = new Set(
-    (cronograma.data ?? []).filter((d) => d.al_dia).map((d) => d.fecha),
+  // Dos fuentes de "día cubierto", unidas:
+  //   1) `cronograma_contrato` (migración 00032): días del plan que el
+  //      reparto por monto ya da por pagados, aunque no exista una fila
+  //      de `pagos` fechada exactamente ese día (p. ej. un abono grande
+  //      que adelanta varios días del cronograma).
+  //   2) Cualquier fila real de `pagos` fechada ese día (igual que antes
+  //      de 00032). Es la garantía de que "registré un cobro hoy" se
+  //      vea en verde SIEMPRE, sin importar si el reparto por monto
+  //      todavía está poniendo al día una deuda vieja de otros días —
+  //      un pago real jamás debe aparecer en rojo.
+  // `diasMora` resta esos días con pago real: la mora (deuda real, sin
+  // cobro ese día) y un cobro ya registrado nunca pueden pintar el mismo
+  // día de colores contradictorios.
+  const fechasConPagoDirecto = new Set(
+    (pagos.data ?? [])
+      .filter((p) => p.estado === "completado" || p.estado === "parcial")
+      .map((p) => fechaLocalISO(p.fecha_pago)),
   );
+  const diasCubiertos = new Set([
+    ...(cronograma.data ?? []).filter((d) => d.al_dia).map((d) => d.fecha),
+    ...fechasConPagoDirecto,
+  ]);
   const diasMora = new Set(
-    (cronograma.data ?? []).filter((d) => d.en_mora).map((d) => d.fecha),
+    (cronograma.data ?? [])
+      .filter((d) => d.en_mora && !fechasConPagoDirecto.has(d.fecha))
+      .map((d) => d.fecha),
   );
 
   function confirmarFinalizacion(motivo: MotivoFinalizacion) {

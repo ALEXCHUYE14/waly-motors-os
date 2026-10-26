@@ -21,6 +21,7 @@ import {
   Package,
   HandCoins,
   ChevronRight,
+  CalendarDays,
   X,
 } from "lucide-react";
 import {
@@ -28,7 +29,9 @@ import {
   soles,
   type ClienteEnMora,
 } from "@/lib/supabase";
-import { cn, urlFirmadas, abrirWhatsApp } from "@/lib/utils";
+import { cn, urlFirmadas, abrirWhatsApp, mensajeError } from "@/lib/utils";
+import { compartirArchivo } from "@/lib/comprobante";
+import { cargarDatosCalendario, generarImagenCalendario, mensajeCalendario } from "@/lib/calendario-imagen";
 import { WhatsAppIcon } from "@/components/ui/whatsapp-icon";
 import { useKpis } from "@/features/dashboard/hooks/use-kpis";
 
@@ -116,6 +119,27 @@ function ModalWhatsApp({
   onCerrar: () => void;
 }) {
   const [mensaje, setMensaje] = useState(() => construirMensajeWhatsApp(cliente));
+  const [enviandoCalendario, setEnviandoCalendario] = useState(false);
+  const [avisoCalendario, setAvisoCalendario] = useState<string | null>(null);
+
+  // Alternativa al texto: la imagen del calendario con "pagado hasta el
+  // día X" — reemplaza la captura de pantalla que se mandaba a mano.
+  async function enviarCalendario() {
+    setEnviandoCalendario(true);
+    setAvisoCalendario(null);
+    try {
+      const datos = await cargarDatosCalendario(cliente.contrato_id);
+      const blob = await generarImagenCalendario(datos);
+      const archivo = new File([blob], `calendario-${cliente.placa}.png`, { type: "image/png" });
+      const resultado = await compartirArchivo(archivo, "Calendario de pagos", cliente.telefono, mensajeCalendario(datos));
+      if (resultado === "cancelado") setAvisoCalendario("Envío cancelado.");
+      else onCerrar();
+    } catch (err) {
+      setAvisoCalendario(mensajeError(err, "No se pudo generar el calendario. Intenta de nuevo."));
+    } finally {
+      setEnviandoCalendario(false);
+    }
+  }
 
   return (
     <motion.div
@@ -194,6 +218,20 @@ function ModalWhatsApp({
             {cliente.telefono ? "Abrir WhatsApp" : "Sin teléfono registrado"}
           </button>
         </div>
+
+        <button
+          type="button"
+          disabled={!cliente.telefono || enviandoCalendario}
+          onClick={() => void enviarCalendario()}
+          className={cn(
+            "mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-whatsapp/30 bg-whatsapp/5 py-3 text-sm font-bold text-whatsapp",
+            "active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40",
+          )}
+        >
+          <CalendarDays className="h-4 w-4" />
+          {enviandoCalendario ? "Generando…" : "Enviar calendario de pagos (imagen)"}
+        </button>
+        {avisoCalendario && <p className="mt-2 text-xs text-oxido">{avisoCalendario}</p>}
       </motion.div>
     </motion.div>
   );

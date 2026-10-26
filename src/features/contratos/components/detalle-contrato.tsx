@@ -37,7 +37,13 @@ import {
   useEliminarPago,
   type MotivoFinalizacion,
 } from "@/features/contratos/hooks/use-contratos";
-import { generarComprobantePago, compartirComprobante, type ResultadoComprobante } from "@/lib/comprobante";
+import {
+  generarComprobantePago,
+  compartirComprobante,
+  compartirArchivo,
+  type ResultadoComprobante,
+} from "@/lib/comprobante";
+import { armarDatosCalendario, generarImagenCalendario, mensajeCalendario } from "@/lib/calendario-imagen";
 import { generarContratoPdf } from "@/lib/contrato-pdf";
 import { cn, urlFirmada, abrirWhatsApp, cargarAdjuntoGarantia, mensajeError } from "@/lib/utils";
 import { WhatsAppIcon } from "@/components/ui/whatsapp-icon";
@@ -145,6 +151,12 @@ const MENSAJE_COMPROBANTE: Record<ResultadoComprobante, string> = {
   cancelado: "Envío cancelado.",
 };
 
+const MENSAJE_CALENDARIO: Record<ResultadoComprobante, string> = {
+  compartido: "Calendario enviado.",
+  descargado: "Imagen del calendario descargada — adjúntala en el chat de WhatsApp que se abrió.",
+  cancelado: "Envío cancelado.",
+};
+
 /** El enlace del contrato dura más que el de un recibo puntual: es un
  *  documento que el cliente puede querer reabrir más adelante. */
 const SEGUNDOS_ENLACE_CONTRATO = 60 * 60 * 24 * 7;
@@ -247,6 +259,8 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
   const cronograma = useCronograma(contratoId);
   const diasCubiertos = new Set((cronograma.data ?? []).filter((d) => d.al_dia).map((d) => d.fecha));
   const diasMora = new Set((cronograma.data ?? []).filter((d) => d.en_mora).map((d) => d.fecha));
+  const [enviandoCalendario, setEnviandoCalendario] = useState(false);
+  const [avisoCalendario, setAvisoCalendario] = useState<string | null>(null);
 
   function confirmarFinalizacion(motivo: MotivoFinalizacion) {
     setErrorFinalizar(null);
@@ -368,6 +382,25 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
       setAvisoContrato(mensajeError(err, "No se pudo generar el contrato. Intenta de nuevo."));
     } finally {
       setGenerandoContrato(false);
+    }
+  }
+
+  // Reemplaza la captura manual del calendario que se enviaba a los
+  // clientes atrasados: misma grilla + "pagado hasta", como imagen.
+  async function enviarCalendarioWhatsApp() {
+    if (!r || !cronograma.data) return;
+    setEnviandoCalendario(true);
+    setAvisoCalendario(null);
+    try {
+      const datos = armarDatosCalendario(r, cronograma.data);
+      const blob = await generarImagenCalendario(datos);
+      const archivo = new File([blob], `calendario-${r.vehiculo_placa}.png`, { type: "image/png" });
+      const resultado = await compartirArchivo(archivo, "Calendario de pagos", r.cliente_telefono, mensajeCalendario(datos));
+      setAvisoCalendario(MENSAJE_CALENDARIO[resultado]);
+    } catch (err) {
+      setAvisoCalendario(mensajeError(err, "No se pudo generar el calendario. Intenta de nuevo."));
+    } finally {
+      setEnviandoCalendario(false);
     }
   }
 
@@ -629,6 +662,16 @@ export default function DetalleContrato({ contratoId }: { contratoId: string }) 
               {new Date(`${r.proximo_vencimiento}T12:00:00`).toLocaleDateString("es-PE")}.
             </p>
           )}
+          <button
+            type="button"
+            onClick={() => void enviarCalendarioWhatsApp()}
+            disabled={enviandoCalendario || !cronograma.data}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-whatsapp/30 bg-whatsapp/5 py-3 text-sm font-bold text-whatsapp active:scale-[0.98] disabled:opacity-50"
+          >
+            <WhatsAppIcon className="h-4 w-4" />
+            {enviandoCalendario ? "Generando…" : "Enviar calendario por WhatsApp"}
+          </button>
+          {avisoCalendario && <p className="text-xs text-grafito/60">{avisoCalendario}</p>}
         </section>
       )}
 

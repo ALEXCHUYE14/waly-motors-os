@@ -187,7 +187,20 @@ export async function compartirComprobante(
   mensaje: string,
 ): Promise<ResultadoComprobante> {
   const archivo = new File([doc.output("blob")], nombreArchivo, { type: "application/pdf" });
+  return compartirArchivo(archivo, "Comprobante de pago", telefono, mensaje);
+}
 
+/**
+ * Mismo flujo que `compartirComprobante`, para cualquier archivo (ej. la
+ * imagen del calendario de pagos): panel nativo de compartir si existe;
+ * si no, descarga el archivo y abre el chat de WhatsApp con el mensaje.
+ */
+export async function compartirArchivo(
+  archivo: File,
+  titulo: string,
+  telefono: string | null,
+  mensaje: string,
+): Promise<ResultadoComprobante> {
   const nav = typeof navigator !== "undefined" ? navigator : undefined;
   const soportaShare =
     !!nav &&
@@ -197,7 +210,7 @@ export async function compartirComprobante(
 
   if (soportaShare && nav) {
     try {
-      await nav.share({ files: [archivo], title: "Comprobante de pago", text: mensaje });
+      await nav.share({ files: [archivo], title: titulo, text: mensaje });
       return "compartido";
     } catch (err) {
       // El usuario cerró el panel de compartir: no forzar descarga de todos modos.
@@ -206,7 +219,12 @@ export async function compartirComprobante(
     }
   }
 
-  doc.save(nombreArchivo);
+  const url = URL.createObjectURL(archivo);
+  const enlace = document.createElement("a");
+  enlace.href = url;
+  enlace.download = archivo.name;
+  enlace.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
   if (telefono) abrirWhatsApp(telefono, mensaje);
   return "descargado";
 }
